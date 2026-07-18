@@ -1,0 +1,272 @@
+// Dev uses SQLite (zero infra). For prod Postgres: change provider to "postgresql".
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  bnetId    String   @unique
+  battletag String?
+  createdAt DateTime @default(now())
+
+  // Public-profile visibility controls, editable from the Settings tab.
+  showBattletag Boolean @default(true)
+  country       String? // ISO 3166-1 alpha-2, e.g. "ES" — see src/game/countries.ts
+
+  // Global "current character" for List-a-key / Apply, set from the navbar
+  // picker. Not a Prisma @relation — getCurrentSelection() in src/data/source.ts
+  // always re-validates against the live roster and self-heals if this id is
+  // stale, deleted, or now hidden, so a DB-level FK buys nothing here.
+  currentCharacterId String?
+  currentSpecId      String?
+
+  characters Character[]
+  groups     Group[]
+  applications Application[]
+
+  pushSubscriptions      PushSubscription[]
+  notificationPreference NotificationPreference?
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+// One row per user. `settings` is a JSON blob keyed by notification type, e.g.
+// {"group_created":{"minLevel":15,"maxLevel":25}} — lets new notification types
+// add their own settings key without a schema migration each time (see the
+// registry in src/server/notifications/registry.ts).
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled   Boolean  @default(false)
+  settings  String   @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+model Character {
+  id      String @id @default(cuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String
+  realm     String
+  realmSlug String
+  region    String  @default("eu")
+  classId   String
+  specId    String? // active spec (fetched for main / on demand)
+  level     Int     @default(80)
+  ilvl      Int?
+  rating    Float? // M+ rating (decimal — matches WCL/Raider.IO precision)
+  faction   String  @default("Alliance")
+  isMain    Boolean @default(false) // the ONE real main — unique per user, a star among the "main" bucket
+  ratingUpdatedAt DateTime? // last successful Blizzard mythic-keystone-profile fetch
+
+  // Roster board: which of the 3 draggable sections this character sits in,
+  // and its drag position within that section. "hidden" replaces the old
+  // standalone `hidden` flag — a hidden character is excluded from BOTH the
+  // public profile and your own parse-analysis pickers, same intent either way.
+  bucket    String @default("alt") // "main" (try-hards) | "alt" (casual) | "hidden" (private)
+  sortOrder Int    @default(0)
+
+  // Warcraft Logs parse-analysis tracking (from the merged wcl-parse-improver).
+  wclZone String? // Warcraft Logs zone id being analyzed for this character
+
+  // Raid-listing kill tracking: JSON RaidKillDTO[] ({raidId, bossId,
+  // difficulty}), one entry per boss at the HIGHEST difficulty ever killed —
+  // no parse/percentile, just kill/no-kill + difficulty (see src/game/raidSeason.ts).
+  raidKills String @default("[]")
+
+  groupMembers GroupMember[]
+  specTracks   CharacterSpecTrack[]
+  runMembers   RunMember[]
+  applications Application[]
+  createdAt    DateTime             @default(now())
+
+  @@unique([userId, realm, name])
+}
+
+// Which specs of a character are tracked for parse analysis, plus their cached
+// Warcraft Logs dungeon-score points (all roles kept for scoring; only DPS
+// specs drive the damage-based gap report).
+model CharacterSpecTrack {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  specId String // `${classId}:${specSlug}`, matches src/game/classes.ts ids
+  role   String // TANK | HEALER | DPS (denormalized for quick filtering)
+  points Float? // WCL dungeon-score points, cached (parse-analysis side)
+
+  // Real per-spec Mythic+ score from raider.io's public API (see
+  // fetchRaiderIoRating in src/data/raiderio.ts). Blizzard's own profile API
+  // can't provide this — it only ever exposes one best run per dungeon
+  // overall, badly under-counting any non-primary spec.
+  bnetScore Float?
+
+  // Manually curated "this is the main spec among the ones I play" — the row
+  // existing at all already means "played" (see setSpecTracks); this is the
+  // one extra bit on top of that. App-enforced uniqueness per character (see
+  // setSpecPlayed in src/data/source.ts), not a DB constraint.
+  isMain Boolean @default(false)
+
+  // This spec's season best run per dungeon: JSON DungeonBestRun[] (dungeonId,
+  // dungeonName, level, score, timed, completedAt), sourced from the same
+  // Blizzard best_runs fetch as bnetScore — see fetchMythicRating.
+  bestRuns String @default("[]")
+
+  @@unique([characterId, specId])
+}
+
+model Group {
+  id          String @id @default(cuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String? // free-text notes ("need for +21 tyrannical week", etc)
+
+  // "mplus" (default, existing behavior) | "raid" — which of the two
+  // mutually-exclusive field groups below is populated. Not a Prisma enum
+  // (SQLite has none) — validated app-side, same convention as `status`/`role`.
+  kind String @default("mplus")
+
+  // ---- mplus fields (kind="mplus") ----
+  dungeonId String?
+  keyLevel  Int?
+
+  // ---- raid fields (kind="raid") ----
+  raidId         String? // see src/game/raidSeason.ts RAID_BY_ID
+  raidDifficulty String? // "normal" | "heroic" | "mythic"
+  raidSize       Int? // target roster size the owner picked (10-30, or 20 if fixed Mythic)
+
+  ownerRole String // TANK | HEALER | DPS — the slot the owner fills
+  startsAt  DateTime? // null = forming now / ASAP
+
+  // ---- applicant requirement (optional, advisory only — never blocks /apply,
+  // just shown as a meets/doesn't-meet badge to the owner, see
+  // src/game/achievements.ts) ----
+  requirementType String? // "rating" | "resilient" | "custom", null = none
+  reqRating       Int?    // rating mode: minimum score
+  reqLevel        Int?    // resilient/custom: baseline level N (e.g. 21)
+  reqExtraCount   Int?    // custom only: K additional dungeons required
+  reqExtraLevel   Int?    // custom only: M, the higher level for those K dungeons
+
+  // open slots: JSON [{ role, prefs: [specId] }] — one entry per open slot,
+  // each with its own ordered acceptable specs (independent, allows combos).
+  slots String @default("[]")
+
+  // whole pre-made group options: JSON [{ role, specId }][] — each inner array
+  // is one 2-4 person bundle the owner will accept as a single unit (e.g. "a
+  // duo: Resto Shaman + Ret Paladin" or "the full last 4: Guardian/Mistweaver/
+  // Augmentation/Devourer"), as an alternative to filling slots one at a time.
+  combos String @default("[]")
+
+  status    String   @default("forming")
+  createdAt DateTime @default(now())
+
+  members      GroupMember[]
+  applications Application[]
+}
+
+// A character applying to fill one of a Group's open slots. The owner
+// accepts (-> inserts a GroupMember + trims the matching Group.slots entry)
+// or declines; the applicant is pushed a direct notification either way (see
+// notifyUser in src/server/notifications/dispatch.ts).
+model Application {
+  id     String @id @default(cuid())
+  groupId String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  applicantUserId String
+  applicant       User   @relation(fields: [applicantUserId], references: [id], onDelete: Cascade)
+
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  role   String // TANK | HEALER | DPS
+  specId String
+  note   String? // free-text from the applicant
+
+  status    String   @default("pending") // pending | accepted | declined
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GroupMember {
+  id          String    @id @default(cuid())
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  role        String // TANK | HEALER | DPS
+  specId      String? // the spec this member is bringing (may differ from char default)
+  slot        Int
+
+  @@unique([groupId, slot])
+}
+
+// Permanent Mythic+ run history, collected from Blizzard's official
+// leaderboard Game Data API (src/server/collector) — not a third-party
+// crawl. One row per distinct group run discovered on a polled
+// connected-realm+dungeon+period leaderboard.
+model Run {
+  id String @id @default(cuid())
+
+  // blizzardRunId if Blizzard ever supplies a stable one (it doesn't for the
+  // leaderboard endpoint today — always null); else a deterministic hash of
+  // dungeonId+connectedRealmId+completedAt+sorted member blizzardCharacterIds
+  // (see computeDedupeKey in src/server/collector/dedupe.ts). Either way this
+  // is what upserts key off, so re-polling the same run updates it in place.
+  dedupeKey     String  @unique
+  blizzardRunId String?
+  source        String  @default("blizzard-leaderboard")
+
+  seasonId         Int?
+  periodId         Int
+  connectedRealmId Int
+  dungeonId        Int // Blizzard's map_challenge_mode_id — see src/game/season.ts's DUNGEON_BY_BLIZZARD_ID
+  keyLevel         Int
+  score            Float? // mythic_rating.rating
+  durationMs       Int
+  completedAt      DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members RunMember[]
+}
+
+model RunMember {
+  id     String @id @default(cuid())
+  runId  String
+  run    Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // Set when this leaderboard member matches one of our own tracked
+  // Characters (by blizzardCharacterId, falling back to name+realm+region);
+  // null for the other party members we don't track — we still keep their
+  // row for full group context on OUR character's runs.
+  characterId String?
+  character   Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  blizzardCharacterId Int // profile.id — always present regardless of whether we track them
+  name                String
+  realmSlug           String
+  region              String
+  specId              Int // Blizzard numeric spec id — see SPEC_ID_TO_SPEC_ID in src/game/blizzardMap.ts
+  role                String? // derived from specId, denormalized like CharacterSpecTrack.role
+
+  @@unique([runId, blizzardCharacterId])
+}

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.wowhead.com)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\"; cat {}')",
+      "Bash(npm run *)",
+      "Bash(mkdir -p \"d:/Workspace/queue_simulator/src/app/player/[region]/[realmSlug]/[name]\")",
+      "WebFetch(domain:raiderio-color.wisak.me)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>/dev/null; echo ok)"
+    ],
+    "additionalDirectories": [
+      "d:\\Workspace\\queue_simulator\\src\\app\\player\\[region]\\[realmSlug]",
+      "C:\\Users\\Victus\\.claude\\plans"
+    ]
+  }
+}

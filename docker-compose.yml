@@ -1,0 +1,15 @@
+# Optional Postgres for prod-like runs.
+# To use: set DATABASE_URL to the postgres URL in .env, switch schema.prisma provider to "postgresql", then `docker compose up -d`.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gf
+      POSTGRES_PASSWORD: gf
+      POSTGRES_DB: groupfinder
+    ports:
+      - "5432:5432"
+    volumes:
+      - gfdata:/var/lib/postgresql/data
+volumes:
+  gfdata:

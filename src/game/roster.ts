@@ -1,6 +1,6 @@
 // Shared logic for picking a default spec off a character's tracked history —
 // used anywhere a player builds a listing from their own roster (List a key, Apply).
-import type { RosterCharacterDTO } from "@/data/source";
+import type { RosterCharacterDTO } from "@/data/dto";
 import { classById } from "./classes";
 
 /** This character's best-known spec: highest rating we have on record, else

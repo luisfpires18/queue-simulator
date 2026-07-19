@@ -1,5 +1,6 @@
 import { auth, signIn, bnetEnabled, devLoginEnabled } from "@/auth";
-import { ensureUser, getUserCharacters, getSpecTracks } from "@/data/source";
+import { ensureUser } from "@/data/users";
+import { getUserCharacters, getSpecTracks } from "@/data/characters";
 import { ProfileClient } from "@/components/profile/ProfileClient";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
 import { bestSpecFor } from "@/game/roster";
@@ -10,7 +11,10 @@ export default async function ProfilePage() {
   const session = await auth();
   const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
 
-  if (!s?.user) {
+  // Checking bnetId, not just user - a session can carry a `user` object
+  // with no bnetId (stale cookie predating this field); ensureUser(bnetId!,
+  // ...) below would otherwise crash instead of showing the login prompt.
+  if (!s?.user || !s?.bnetId) {
     return (
       <div className="max-w-xl mx-auto panel p-8 text-center space-y-4">
         <h1 className="text-2xl font-black">Your Profile</h1>

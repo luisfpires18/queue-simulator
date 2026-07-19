@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser, listPendingApplications } from "@/data/source";
+import { listPendingApplications } from "@/data/applications";
 import type { Role } from "@/game/classes";
+import { getSessionUser } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +13,8 @@ const VALID_ROLES: Role[] = ["TANK", "HEALER", "DPS"];
 // backs a UI list, not a sensitive endpoint worth distinguishing "empty"
 // from "denied".
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) {
+  const ctx = await getSessionUser();
+  if (!ctx) {
     return NextResponse.json({ applications: [], total: 0, page: 1, pageSize: 5, countsByRole: { TANK: 0, HEALER: 0, DPS: 0 } });
   }
 
@@ -26,7 +25,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const roleParam = searchParams.get("role");
   const role = VALID_ROLES.includes(roleParam as Role) ? (roleParam as Role) : null;
 
-  const user = await ensureUser(s.bnetId, s.battletag);
-  const { applications, total, countsByRole } = await listPendingApplications(id, user.id, role, page, pageSize);
+  const { applications, total, countsByRole } = await listPendingApplications(id, ctx.user.id, role, page, pageSize);
   return NextResponse.json({ applications, total, page, pageSize, countsByRole });
 }

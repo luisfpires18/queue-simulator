@@ -28,6 +28,7 @@ model User {
   characters Character[]
   groups     Group[]
   applications Application[]
+  soloQueueEntries SoloQueueEntry[]
 
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
@@ -41,6 +42,8 @@ model PushSubscription {
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // One row per user. `settings` is a JSON blob keyed by notification type, e.g.
@@ -93,9 +96,12 @@ model Character {
   specTracks   CharacterSpecTrack[]
   runMembers   RunMember[]
   applications Application[]
+  soloQueueEntries SoloQueueEntry[]
   createdAt    DateTime             @default(now())
 
   @@unique([userId, realm, name])
+  @@index([userId, bucket])
+  @@index([realmSlug, name])
 }
 
 // Which specs of a character are tracked for parse analysis, plus their cached
@@ -138,6 +144,11 @@ model Group {
   title       String
   description String? // free-text notes ("need for +21 tyrannical week", etc)
 
+  // Mythic Dungeon Tools route link/import string (kind="mplus" only - raid
+  // pulls don't use MDT). Mandatory when ownerRole="TANK", optional
+  // otherwise; enforced app-side (zod + client check), not a DB constraint.
+  route String?
+
   // "mplus" (default, existing behavior) | "raid" — which of the two
   // mutually-exclusive field groups below is populated. Not a Prisma enum
   // (SQLite has none) — validated app-side, same convention as `status`/`role`.
@@ -179,6 +190,9 @@ model Group {
 
   members      GroupMember[]
   applications Application[]
+
+  @@index([status, kind])
+  @@index([ownerUserId, status])
 }
 
 // A character applying to fill one of a Group's open slots. The owner
@@ -200,9 +214,61 @@ model Application {
   specId String
   note   String? // free-text from the applicant
 
+  // The applicant's own proposed Mythic Dungeon Tools route, for the leader
+  // to review before accepting - only ever populated when role="TANK" on an
+  // mplus group (see ApplyModal); always optional.
+  route String?
+
+  // "manual" (applicant applied themselves) | "queue" (system-proposed on
+  // behalf of a SoloQueueEntry, see runSoloQueueMatch in src/data/source.ts).
+  // Queue-sourced declines skip notifying the applicant - the queue just
+  // keeps trying other groups - so the owner's Pending Requests UI is the
+  // only place this ever surfaces (tagged "Suggested").
+  source String @default("manual")
+
   status    String   @default("pending") // pending | accepted | declined
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([groupId, status])
+  @@index([applicantUserId, status])
+  @@index([characterId])
+}
+
+// A player's live "find me a group" request, matched automatically against
+// open Groups by role/comp/rating fit (see runSoloQueueMatch in
+// src/data/source.ts). One row per active queue attempt; proposals are
+// ordinary Application rows (source="queue") against the best-fit Group, so
+// leader accept/decline reuses the existing Pending Requests flow.
+model SoloQueueEntry {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  role   String // TANK | HEALER | DPS
+  specId String
+
+  // Optional match filters, set from the board's own filter sidebar at join
+  // time (see BoardClient) - "what am I applying for". Null bounds / an
+  // empty dungeonIds list mean no restriction on that dimension.
+  minKeyLevel Int?
+  maxKeyLevel Int?
+  dungeonIds  String @default("[]") // JSON string[] of dungeon ids
+
+  // The outstanding Application (if any) currently proposed to a leader on
+  // this entry's behalf - at most one live proposal per queue entry, so the
+  // matcher never double-proposes while waiting on a leader's response.
+  activeApplicationId String? @unique
+
+  status    String   @default("queued") // queued | matched | cancelled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId, status])
 }
 
 model GroupMember {
@@ -216,6 +282,7 @@ model GroupMember {
   slot        Int
 
   @@unique([groupId, slot])
+  @@index([characterId])
 }
 
 // Permanent Mythic+ run history, collected from Blizzard's official

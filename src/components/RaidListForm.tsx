@@ -1,22 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CurrentSelectionDTO, GroupDTO } from "@/data/source";
-import { specById, type Role } from "@/game/classes";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
+import { type Role } from "@/game/classes";
 import { RAIDS, RAID_BY_ID, RAID_DIFFICULTIES, RAID_DIFFICULTY_LABEL, raidSizeRange, type RaidDifficulty } from "@/game/raidSeason";
-import {
-  computeBuffCoverage, computeUtilityCoverage, computeDefensiveCoverage, computeExternalDefensiveCoverage,
-  computeDispelCoverage, computeEnemyDispelCoverage,
-} from "@/game/coverage";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
+import { ErrorModal } from "./ErrorModal";
 import {
-  ROLE_LABEL, ComboEditor, CoveragePanel, CoverageCol, SlotPrefPicker, Field, type ComboMember,
+  ROLE_LABEL, ComboEditor, CoveragePanel, SlotPrefPicker, Field, UtilityCoveragePanel,
+  resolveListingOwner, slotLabels, submitListingRequest, toLocalInputValue,
+  useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
-
-interface Slot { role: Role; prefs: string[] }
 
 /** Sane default split for a given roster size - always sums to `size` by
  * construction (DPS is the remainder), floors tanks/healers at 2 each so
@@ -30,23 +28,14 @@ function suggestComp(size: number): Record<Role, number> {
 }
 
 // remaining slots after the owner's own role is accounted for
-function raidSlotsFor(ownerRole: Role, counts: Record<Role, number>): Slot[] {
+function raidSlotsFor(ownerRole: Role, counts: Record<Role, number>): FormSlot[] {
   const need = { ...counts };
   need[ownerRole] = Math.max(0, need[ownerRole] - 1);
-  const slots: Slot[] = [];
+  const slots: FormSlot[] = [];
   (["TANK", "HEALER", "DPS"] as Role[]).forEach((r) => {
     for (let i = 0; i < need[r]; i++) slots.push({ role: r, prefs: [] });
   });
   return slots;
-}
-
-let comboSeq = 0;
-
-/** ISO string -> the local value a <input type="datetime-local"> expects. */
-function toLocalInputValue(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function RaidListForm({
@@ -95,14 +84,10 @@ export function RaidListForm({
   const [startAt, setStartAt] = useState(editGroup?.startsAt ? toLocalInputValue(editGroup.startsAt) : "");
 
   // Fixed to this raid's original owner/spec (slot 0) when editing, not the
-  // navbar's currently-selected character - see the identical fix/comment in
-  // ListKeyForm.tsx.
-  const editOwnerMember = editGroup?.members.find((m) => m.slot === 0) ?? null;
-  const owner = editOwnerMember ?? current.character;
-  const ownerSpecId = editOwnerMember?.broughtSpecId ?? current.specId;
-  const ownerRole = (specById(ownerSpecId)?.role ?? "DPS") as Role;
+  // navbar's currently-selected character - see resolveListingOwner.
+  const { owner, ownerSpecId, ownerRole } = resolveListingOwner(current, editGroup);
 
-  const [slots, setSlots] = useState<Slot[]>(
+  const [slots, setSlots] = useState<FormSlot[]>(
     () => editGroup?.slots.map((s) => ({ role: s.role as Role, prefs: s.prefs })) ?? raidSlotsFor(ownerRole, counts)
   );
   // rebuild open slots whenever the comp counts or the owner's role change -
@@ -118,47 +103,12 @@ export function RaidListForm({
   const setSlotPrefs = (i: number, prefs: string[]) =>
     setSlots((prev) => prev.map((s, idx) => (idx === i ? { ...s, prefs } : s)));
 
-  const [combos, setCombos] = useState<{ key: number; members: ComboMember[] }[]>(
-    () => editGroup?.combos.map((combo) => ({ key: comboSeq++, members: combo.map((m) => ({ role: m.role as Role, specId: m.specId })) })) ?? []
-  );
-  const addCombo = () => setCombos((prev) => [...prev, { key: comboSeq++, members: [] }]);
-  const removeCombo = (key: number) => setCombos((prev) => prev.filter((c) => c.key !== key));
-  const addComboMember = (key: number, specId: string) => {
-    const role = specById(specId)!.role as Role;
-    setCombos((prev) =>
-      prev.map((c) =>
-        c.key === key && c.members.length < size
-          ? { ...c, members: [...c.members, { role, specId }] }
-          : c
-      )
-    );
-  };
-  const removeComboMember = (key: number, i: number) =>
-    setCombos((prev) => prev.map((c) => (c.key === key ? { ...c, members: c.members.filter((_, j) => j !== i) } : c)));
+  const { combos, addCombo, removeCombo, addComboMember, removeComboMember, prefMode, switchPrefMode } =
+    useComboBuilder(editGroup, size, setSlots);
 
-  const [prefMode, setPrefMode] = useState<"slots" | "combo">(
-    () => (editGroup?.combos.length ? "combo" : "slots")
-  );
-  const switchPrefMode = (mode: "slots" | "combo") => {
-    if (mode === prefMode) return;
-    if (mode === "slots") setCombos([]);
-    else setSlots((prev) => prev.map((s) => ({ ...s, prefs: [] })));
-    setPrefMode(mode);
-  };
-
-  const desiredSpecIds = useMemo(
-    () => [
-      ...slots.flatMap((s) => s.prefs),
-      ...combos.flatMap((c) => c.members.map((m) => m.specId)),
-    ],
-    [slots, combos]
-  );
-  const buffCoverage = useMemo(() => computeBuffCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  const utilityCoverage = useMemo(() => computeUtilityCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  const defensiveCoverage = useMemo(() => computeDefensiveCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  const externalDefensiveCoverage = useMemo(() => computeExternalDefensiveCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  const dispelCoverage = useMemo(() => computeDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  const enemyDispelCoverage = useMemo(() => computeEnemyDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const {
+    buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage,
+  } = useListingCoverage(ownerSpecId, slots, combos);
 
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -172,39 +122,25 @@ export function RaidListForm({
       if (badCombo) { setErr("A combo needs at least 2 members (or remove it)."); return; }
     }
     setSubmitting(true);
-    try {
-      const res = await fetch(editGroup ? `/api/groups/${editGroup.id}` : "/api/groups", {
-        method: editGroup ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "raid",
-          title,
-          description: description.trim() || null,
-          raidId, raidDifficulty: difficulty, raidSize: size, ownerRole,
-          ownerCharacterId: owner.id, ownerSpecId,
-          startsAt: startMode === "pick" && startAt ? new Date(startAt).toISOString() : null,
-          slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
-          combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        const action = editGroup ? "Update" : "List";
-        setErr(res.status === 401 ? "Session expired - log in again." : `${action} failed (${res.status}). ${body.slice(0, 140)}`);
-        setSubmitting(false);
-        return;
-      }
-      window.location.assign("/raids");
-    } catch (e) {
-      setErr(`Network error: ${e instanceof Error ? e.message : "unknown"}`);
+    const error = await submitListingRequest(editGroup, {
+      kind: "raid",
+      title,
+      description: description.trim() || null,
+      raidId, raidDifficulty: difficulty, raidSize: size, ownerRole,
+      ownerCharacterId: owner.id, ownerSpecId,
+      startsAt: startMode === "pick" && startAt ? new Date(startAt).toISOString() : null,
+      slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
+      combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
+    });
+    if (error) {
+      setErr(error);
       setSubmitting(false);
+      return;
     }
+    window.location.assign("/raids");
   };
 
-  const dpsIndex: number[] = [];
-  let d = 0;
-  slots.forEach((s) => dpsIndex.push(s.role === "DPS" ? ++d : 0));
-  const dpsTotal = slots.filter((s) => s.role === "DPS").length;
+  const labels = slotLabels(slots);
 
   return (
     <div className="space-y-6">
@@ -355,7 +291,7 @@ export function RaidListForm({
               <SlotPrefPicker
                 key={i}
                 role={s.role}
-                label={s.role === "DPS" && dpsTotal > 1 ? `DPS #${dpsIndex[i]}` : ROLE_LABEL[s.role]}
+                label={labels[i]}
                 value={s.prefs}
                 onChange={(v) => setSlotPrefs(i, v)}
               />
@@ -385,33 +321,28 @@ export function RaidListForm({
 
       <CoveragePanel title="Buffs & Debuffs" coverage={buffCoverage} />
 
-      <div className="panel p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Utility</div>
-          {utilityCoverage.warning && (
-            <div className="chip bg-rose-500/15 border border-rose-500/50 text-rose-200">
-              ⚠ Missing {utilityCoverage.lust === "missing" ? "Bloodlust" : ""}
-              {utilityCoverage.lust === "missing" && utilityCoverage.res === "missing" ? " & " : ""}
-              {utilityCoverage.res === "missing" ? "Battle Res" : ""}
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <CoverageCol title="Have" items={utilityCoverage.have} status="have" />
-          <CoverageCol title="Want" items={utilityCoverage.want} status="want" />
-          <CoverageCol title="Missing" items={utilityCoverage.missing} status="missing" />
-        </div>
-      </div>
+      <UtilityCoveragePanel coverage={utilityCoverage} />
 
       <CoveragePanel title="Friendly Dispels" coverage={dispelCoverage} />
       <CoveragePanel title="Enemy Magic Dispels" coverage={enemyDispelCoverage} />
       <CoveragePanel title="Party Defensives" coverage={defensiveCoverage} />
       <CoveragePanel title="External Defensives" coverage={externalDefensiveCoverage} />
 
-      {err && <p className="text-rose-400 text-sm">{err}</p>}
-      <button onClick={submit} disabled={submitting || !compValid} className="btn-gold disabled:opacity-50 disabled:cursor-not-allowed">
-        {editGroup ? (submitting ? "Saving…" : "Save changes") : (submitting ? "Listing…" : "List raid")}
-      </button>
+      <div className="flex items-center gap-3">
+        <Link href="/raids" className="btn-ghost">
+          ← Go back
+        </Link>
+        <button onClick={submit} disabled={submitting || !compValid} className="btn-gold disabled:opacity-50 disabled:cursor-not-allowed">
+          {editGroup ? (submitting ? "Saving…" : "Save changes") : (submitting ? "Listing…" : "List raid")}
+        </button>
+      </div>
+
+      <ErrorModal
+        open={err != null}
+        title={editGroup ? "Couldn't save changes" : "Couldn't list your raid"}
+        message={err ?? ""}
+        onClose={() => setErr(null)}
+      />
     </div>
   );
 }

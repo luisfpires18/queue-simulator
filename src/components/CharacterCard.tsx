@@ -7,7 +7,7 @@ import { WowIcon } from "./WowIcon";
 import { SpecIcon } from "./SpecIcon";
 import { ProfileLinkBadges, CopyNameButton } from "./ProfileLinks";
 import { cn } from "@/lib/utils";
-import type { DungeonBestRun, RaidKillDTO } from "@/data/source";
+import type { DungeonBestRun, RaidKillDTO } from "@/data/dto";
 import { DungeonGrid } from "./DungeonGrid";
 import { RaidBossGrid } from "./RaidBossGrid";
 

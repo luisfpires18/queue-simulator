@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { fetchRaiderIoRating } from "@/data/raiderio";
-import { ensureUser, getUserCharacters, setCharacterRating } from "@/data/source";
+import { setCharacterRating } from "@/data/characters";
 import { specById } from "@/game/classes";
+import { getSessionUser, notAuthenticated, findOwnedCharacter } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +13,11 @@ export const dynamic = "force-dynamic";
 // weren't the character's single best, badly under-counting anything but
 // the main spec. See src/data/raiderio.ts.
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
   const { id } = await params;
-  const user = await ensureUser(s.bnetId, s.battletag);
-  const chars = await getUserCharacters(user.id);
-  const character = chars.find((c) => c.id === id);
+  const character = await findOwnedCharacter(ctx.user.id, id);
   if (!character) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const result = await fetchRaiderIoRating(character.region, character.realmSlug, character.name);

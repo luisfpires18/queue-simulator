@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, loadOwnedCharacter, errorResponse } from "@/server/wclHelpers";
-import { setCharacterRaidKills } from "@/data/source";
+import { setCharacterRaidKills } from "@/data/characters";
 import { fetchLiveRaidKills } from "@/server/wcl/liveRaidKills";
 
 export const dynamic = "force-dynamic";

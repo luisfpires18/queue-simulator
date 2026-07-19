@@ -1,17 +1,29 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser, acceptApplication } from "@/data/source";
+import { acceptApplication } from "@/data/applications";
+import { getSessionUser, notAuthenticated } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
   const { id } = await params;
-  const user = await ensureUser(s.bnetId, s.battletag);
-  const ok = await acceptApplication(id, user.id);
-  if (!ok) return NextResponse.json({ error: "Not found, not yours, or already resolved" }, { status: 404 });
+  const result = await acceptApplication(id, ctx.user.id);
+  if (!result.ok) {
+    if (result.reason === "conflict") {
+      return NextResponse.json(
+        { error: `This applicant is already committed to "${result.conflictTitle}" around that time.` },
+        { status: 409 }
+      );
+    }
+    if (result.reason === "below_requirement") {
+      return NextResponse.json(
+        { error: `This applicant no longer meets the ${result.requiredRating}+ rating requirement.` },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: "Not found, not yours, or already resolved" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { fetchAccountCharacters } from "@/data/blizzard";
-import { ensureUser, upsertCharacters } from "@/data/source";
+import { ensureUser } from "@/data/users";
+import { upsertCharacters } from "@/data/characters";
+import { getBnetSession, notAuthenticated } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; accessToken?: string; battletag?: string }) | null;
-  if (!s?.bnetId || !s.accessToken) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  const s = await getBnetSession();
+  if (!s?.accessToken) return notAuthenticated();
   const user = await ensureUser(s.bnetId, s.battletag);
   const chars = await fetchAccountCharacters(s.accessToken);
   const count = await upsertCharacters(user.id, chars);

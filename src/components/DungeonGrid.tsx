@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CardSpecTrack } from "./CharacterCard";
 import { classById } from "@/game/classes";
 import { DUNGEONS } from "@/game/season";
@@ -36,33 +36,52 @@ export function DungeonGrid({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   // highest score first (main spec pinned first among ties/no-score specs)
-  const orderedTracks = [...specTracks].sort((a, b) => {
-    const mainDiff = (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0);
-    if (mainDiff !== 0) return mainDiff;
-    return (b.bnetScore ?? b.points ?? -1) - (a.bnetScore ?? a.points ?? -1);
-  });
-  const played = orderedTracks.length > 0
-    ? orderedTracks.map((t) => t.specId)
-    : (classById(classId)?.specs ?? []).map((s) => s.id);
+  const orderedTracks = useMemo(
+    () =>
+      [...specTracks].sort((a, b) => {
+        const mainDiff = (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0);
+        if (mainDiff !== 0) return mainDiff;
+        return (b.bnetScore ?? b.points ?? -1) - (a.bnetScore ?? a.points ?? -1);
+      }),
+    [specTracks]
+  );
+  const played = useMemo(
+    () =>
+      orderedTracks.length > 0
+        ? orderedTracks.map((t) => t.specId)
+        : (classById(classId)?.specs ?? []).map((s) => s.id),
+    [orderedTracks, classId]
+  );
 
-  const trackBySpec = new Map(specTracks.map((t) => [t.specId, t]));
+  const trackBySpec = useMemo(() => new Map(specTracks.map((t) => [t.specId, t])), [specTracks]);
+  // Guard against `played` (not `trackBySpec`) - initialSpecId is "the spec
+  // this character is actually bringing", which may have no logged parse
+  // track at all (trackBySpec would then wrongly reject it and fall through
+  // to played[0], the class's first spec, regardless of what's being shown).
   const [selected, setSelected] = useState<string>(
-    (initialSpecId && trackBySpec.has(initialSpecId) ? initialSpecId : undefined)
+    (initialSpecId && played.includes(initialSpecId) ? initialSpecId : undefined)
       ?? specTracks.find((t) => t.isMain)?.specId
       ?? played[0]
       ?? ""
   );
 
-  const runs = trackBySpec.get(selected)?.bestRuns ?? [];
-  const runByDungeonName = new Map(runs.map((r) => [normalizeDungeonName(r.dungeonName), r]));
+  const runs = useMemo(() => trackBySpec.get(selected)?.bestRuns ?? [], [trackBySpec, selected]);
+  const runByDungeonName = useMemo(
+    () => new Map(runs.map((r) => [normalizeDungeonName(r.dungeonName), r])),
+    [runs]
+  );
   const runFor = (d: (typeof DUNGEONS)[number]) => runByDungeonName.get(normalizeDungeonName(d.name)) ?? null;
-  const sortedDungeons = [...DUNGEONS].sort((a, b) => {
-    const ra = runFor(a);
-    const rb = runFor(b);
-    const levelDiff = (rb?.level ?? -1) - (ra?.level ?? -1);
-    if (levelDiff !== 0) return levelDiff;
-    return (rb?.score ?? -1) - (ra?.score ?? -1);
-  });
+  const sortedDungeons = useMemo(
+    () =>
+      [...DUNGEONS].sort((a, b) => {
+        const ra = runByDungeonName.get(normalizeDungeonName(a.name)) ?? null;
+        const rb = runByDungeonName.get(normalizeDungeonName(b.name)) ?? null;
+        const levelDiff = (rb?.level ?? -1) - (ra?.level ?? -1);
+        if (levelDiff !== 0) return levelDiff;
+        return (rb?.score ?? -1) - (ra?.score ?? -1);
+      }),
+    [runByDungeonName]
+  );
 
   return (
     <div className="w-full pt-2 border-t border-panelborder/60">

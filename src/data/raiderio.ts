@@ -1,16 +1,16 @@
-// Raider.IO public API client — no auth needed (unlike Blizzard's profile
+﻿// Raider.IO public API client â€” no auth needed (unlike Blizzard's profile
 // API, which requires the signed-in user's own OAuth token). Used instead of
 // Blizzard's own mythic-keystone-profile fetch because Blizzard's API only
 // ever exposes ONE best run per dungeon overall (whichever spec scored
-// highest) — a secondary spec's real runs simply never appear if they didn't
+// highest) â€” a secondary spec's real runs simply never appear if they didn't
 // happen to be the character's single best. Raider.io's own per-spec SCORE
-// (mythic_plus_scores_by_season) is still exact — but its public run-listing
+// (mythic_plus_scores_by_season) is still exact â€” but its public run-listing
 // fields are each a top-10-by-some-metric subset (verified against their own
 // /swagger.json), not the complete history their own website shows via a
 // private API. So the season score matches raider.io exactly; the per-run
 // "keys this season" grid is best-effort and can miss a spec's own runs on
 // dungeons it was never impressive on.
-import type { DungeonBestRun } from "./source";
+import type { DungeonBestRun } from "./dto";
 import { SPEC_ID_TO_SPEC_ID as SPEC_ID_MAP, classIdFromName, specIdFromNames } from "@/game/blizzardMap";
 
 const API_HOST = "https://raider.io/api/v1";
@@ -29,7 +29,7 @@ interface RaiderIoProfile {
   mythic_plus_scores_by_season?: { season: string; scores: Record<string, number> }[];
   mythic_plus_ranks?: Record<string, unknown>;
   gear?: { item_level_equipped?: number };
-  // Identity fields — raider.io always returns these on a valid character
+  // Identity fields â€” raider.io always returns these on a valid character
   // (not gated by the `fields` param, unlike scores/gear/runs below).
   // Only meaningfully consumed by the universal player-search feature
   // (src/data/livePlayer.ts), which has no local Character row to source
@@ -39,11 +39,11 @@ interface RaiderIoProfile {
   realm?: string;
   active_spec_name?: string;
   // None of raider.io's public run-listing fields return a character's full
-  // run history — each is a top-10-by-some-metric subset (confirmed against
+  // run history â€” each is a top-10-by-some-metric subset (confirmed against
   // their own /swagger.json docs), unlike the richer per-spec table their own
   // website shows (which comes from a private, undocumented internal API).
   // Union every public field so we recover as much real per-spec/per-dungeon
-  // coverage as the public API can give — still won't be perfectly complete
+  // coverage as the public API can give â€” still won't be perfectly complete
   // for a spec played only at low, unremarkable levels (those runs never
   // crack any of these top-10 cuts).
   mythic_plus_recent_runs?: RaiderIoRun[];
@@ -68,7 +68,7 @@ export interface RaiderIoRatingResult {
 }
 
 /** Real M+ rating + per-spec breakdown + this season's per-dungeon best runs,
- * straight from raider.io's own public API — the same numbers their site shows. */
+ * straight from raider.io's own public API â€” the same numbers their site shows. */
 export async function fetchRaiderIoRating(
   region: string,
   realmSlug: string,
@@ -110,10 +110,10 @@ export async function fetchRaiderIoRating(
   const activeSpecId = specIdFromNames(data.class, data.active_spec_name);
   const realmName = data.realm ?? null;
 
-  // scores.spec_0/1/2/3 are ordinal — positional, not keyed by real spec id.
+  // scores.spec_0/1/2/3 are ordinal â€” positional, not keyed by real spec id.
   // mythic_plus_ranks' own spec_<realId> keys come back in that same ordinal
   // order (empirically verified against live Mage/Druid/Demon Hunter
-  // profiles — notably Demon Hunter, where the new Devourer spec is APPENDED
+  // profiles â€” notably Demon Hunter, where the new Devourer spec is APPENDED
   // after the original Havoc/Vengeance pair rather than inserted between
   // them, so a hardcoded per-class ordinal table would get it wrong).
   const rankSpecIds = Object.keys(data.mythic_plus_ranks ?? {})
@@ -130,7 +130,7 @@ export async function fetchRaiderIoRating(
   }
 
   // `${specId}|${dungeonId}` -> the best (highest-score) run seen for that
-  // pair, across every run-listing field the public API offers — each field
+  // pair, across every run-listing field the public API offers â€” each field
   // is its own top-10 cut, so a run missing from one may still surface in
   // another (see the field-list comment above).
   const allRuns = [

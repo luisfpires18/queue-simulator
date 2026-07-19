@@ -1,40 +1,36 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/source";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { COUNTRIES } from "@/game/countries";
+import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
-async function currentUser() {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return null;
-  return ensureUser(s.bnetId, s.battletag);
-}
+// `country` is validated separately below so it keeps its own error message.
+const schema = z.object({ showBattletag: z.boolean(), country: z.unknown().optional() });
 
 export async function GET() {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  return NextResponse.json({ showBattletag: user.showBattletag, country: user.country });
+  return NextResponse.json({ showBattletag: ctx.user.showBattletag, country: ctx.user.country });
 }
 
 export async function PUT(req: Request) {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body.showBattletag !== "boolean") {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-  if (body.country != null && (typeof body.country !== "string" || !COUNTRIES.some((c) => c.code === body.country))) {
+  const body = await parseBody(req, schema, "Invalid body");
+  if (!body.ok) return body.response;
+
+  const country = body.data.country;
+  if (country != null && (typeof country !== "string" || !COUNTRIES.some((c) => c.code === country))) {
     return NextResponse.json({ error: "Invalid country" }, { status: 400 });
   }
 
   const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { showBattletag: body.showBattletag, country: body.country ?? null },
+    where: { id: ctx.user.id },
+    data: { showBattletag: body.data.showBattletag, country: (country as string | undefined) ?? null },
   });
 
   return NextResponse.json({ showBattletag: updated.showBattletag, country: updated.country });

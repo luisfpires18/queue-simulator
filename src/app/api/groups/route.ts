@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser, createGroup, listGroups } from "@/data/source";
-import { prisma } from "@/lib/prisma";
+import { createGroup, listGroups, findSchedulingConflict } from "@/data/groups";
+import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
 import { groupInputSchema } from "./schema";
 
 export const dynamic = "force-dynamic";
@@ -12,20 +11,28 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const parsed = groupInputSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const body = await parseBody(req, groupInputSchema);
+  if (!body.ok) return body.response;
 
-  const user = await ensureUser(s.bnetId, s.battletag);
   // Ensure the chosen character belongs to this user.
-  const owned = await prisma.character.findFirst({
-    where: { id: parsed.data.ownerCharacterId, userId: user.id },
-  });
+  const owned = await findOwnedCharacter(ctx.user.id, body.data.ownerCharacterId);
   if (!owned) return NextResponse.json({ error: "Character not yours" }, { status: 403 });
 
-  const group = await createGroup(user.id, parsed.data);
+  // Same 1-hour conflict window as joining someone else's key (see
+  // findSchedulingConflict) - a listing more than an hour from any of your
+  // other active commitments is fine (e.g. scheduling one for later while
+  // one is currently forming), only genuinely overlapping times are blocked.
+  const conflict = await findSchedulingConflict(ctx.user.id, body.data.startsAt ?? null);
+  if (conflict) {
+    return NextResponse.json(
+      { error: `You're already committed to "${conflict.title}" around that time.` },
+      { status: 409 }
+    );
+  }
+
+  const group = await createGroup(ctx.user.id, body.data);
   return NextResponse.json({ id: group.id });
 }

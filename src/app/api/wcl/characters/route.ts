@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUserCharacters, getSpecTracks } from "@/data/source";
+import { getUserCharacters, getSpecTracks } from "@/data/characters";
 import { requireUser, errorResponse } from "@/server/wclHelpers";
 
 export const dynamic = "force-dynamic";

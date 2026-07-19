@@ -1,32 +1,24 @@
-import { listGroups } from "@/data/source";
+import { boardBroadcaster } from "@/server/board/broadcaster";
 
 export const dynamic = "force-dynamic";
 
-// SSE: pushes the full board every few seconds so clients stay live without polling.
+// SSE: pushes the full board every few seconds so clients stay live without
+// polling. The interval, board query, and Solo Queue match pass are shared
+// across all connections - see src/server/board/broadcaster.ts; this route
+// only bridges the broadcaster to one client's ReadableStream.
 export async function GET() {
   const encoder = new TextEncoder();
-  let closed = false;
+  let unsubscribe: (() => void) | null = null;
 
   const stream = new ReadableStream({
-    async start(controller) {
-      const send = async () => {
-        if (closed) return;
-        try {
-          const groups = await listGroups();
-          controller.enqueue(encoder.encode(`event: board\ndata: ${JSON.stringify({ groups, ts: Date.now() })}\n\n`));
-        } catch {
-          // next tick retries
-        }
-      };
-      await send();
-      const interval = setInterval(send, 4000);
-      const ping = setInterval(() => {
-        if (!closed) controller.enqueue(encoder.encode(`: ping\n\n`));
-      }, 15000);
-      // @ts-ignore store for cancel
-      controller._cleanup = () => { closed = true; clearInterval(interval); clearInterval(ping); };
+    start(controller) {
+      unsubscribe = boardBroadcaster.subscribe((chunk) => {
+        controller.enqueue(encoder.encode(chunk));
+      });
     },
-    cancel() { closed = true; },
+    cancel() {
+      unsubscribe?.();
+    },
   });
 
   return new Response(stream, {

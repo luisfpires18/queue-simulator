@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ApplicationWithRatingDTO } from "@/data/source";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Role } from "@/game/classes";
+import { ApiClientError, apiPost } from "@/lib/api-client";
+import { usePendingApplications } from "@/lib/queries";
+import { PaginationChips } from "./ui/PaginationChips";
 import { RoleIcon } from "./RoleIcon";
 import { RatingDetails } from "./RatingDetails";
 import { cn } from "@/lib/utils";
@@ -12,7 +15,6 @@ type Tab = "ALL" | Role;
 const TABS: Tab[] = ["ALL", "DPS", "TANK", "HEALER"];
 const TAB_LABEL: Record<Tab, string> = { ALL: "All", TANK: "Tank", HEALER: "Healer", DPS: "DPS" };
 const PAGE_SIZE = 5;
-const EMPTY_COUNTS: Record<Role, number> = { TANK: 0, HEALER: 0, DPS: 0 };
 
 /** Owner-only: a paginated, role-tabbed modal of this group's pending
  * applications (an "All" tab first, then DPS/Tank/Healer filters), each
@@ -28,33 +30,21 @@ export function PendingRequestsModal({
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ALL");
   const [page, setPage] = useState(1);
-  const [apps, setApps] = useState<ApplicationWithRatingDTO[]>([]);
-  const [total, setTotal] = useState<number | null>(null); // null = not loaded yet (this tab)
-  const [countsByRole, setCountsByRole] = useState<Record<Role, number> | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  function load(tab: Tab, p: number) {
-    const roleParam = tab === "ALL" ? "" : `&role=${tab}`;
-    fetch(`/api/groups/${groupId}/applications?page=${p}&pageSize=${PAGE_SIZE}${roleParam}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setApps(data.applications ?? []);
-        setTotal(data.total ?? 0);
-        setCountsByRole(data.countsByRole ?? EMPTY_COUNTS);
-      })
-      .catch(() => {});
-  }
+  // Always mounted (never gated on `open`) so the badge count loads with the
+  // card; tab/page changes re-key the query and fetch on their own.
+  const { data, refetch } = usePendingApplications(groupId, activeTab, page, PAGE_SIZE);
+  const apps = data?.applications ?? [];
+  const total = data?.total ?? null; // null = not loaded yet (this tab)
+  const countsByRole = data?.countsByRole ?? null;
 
-  // Badge counts on mount, regardless of whether the modal's open.
+  // Re-opening the modal always shows fresh data, like the old per-open load.
   useEffect(() => {
-    load(activeTab, 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId]);
-
-  useEffect(() => {
-    if (open) load(activeTab, page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab, page]);
+    if (open) refetch();
+  }, [open, refetch]);
 
   function switchTab(tab: Tab) {
     setActiveTab(tab);
@@ -63,13 +53,18 @@ export function PendingRequestsModal({
 
   async function resolve(id: string, action: "accept" | "decline") {
     setBusyId(id);
+    setResolveError(null);
     try {
-      await fetch(`/api/applications/${id}/${action}`, { method: "POST" });
+      await apiPost(`/api/applications/${id}/${action}`);
       // the accepted/declined row may have been the page's last one — step back if so
       const nextPage = apps.length === 1 && page > 1 ? page - 1 : page;
       setPage(nextPage);
-      load(activeTab, nextPage);
+      queryClient.invalidateQueries({ queryKey: ["pending-applications", groupId] });
       onResolved();
+    } catch (e) {
+      const fallback = `${action === "accept" ? "Accept" : "Decline"} failed.`;
+      setResolveError(e instanceof ApiClientError ? e.message : fallback);
+      return;
     } finally {
       setBusyId(null);
     }
@@ -79,7 +74,12 @@ export function PendingRequestsModal({
   const totalAcrossRoles = countsByRole ? countsByRole.TANK + countsByRole.HEALER + countsByRole.DPS : null;
   const tabCount = (tab: Tab) => (tab === "ALL" ? totalAcrossRoles : countsByRole?.[tab]) ?? 0;
 
-  if (totalAcrossRoles === 0) return null;
+  // Hides both while the count is still loading (null) and once it's
+  // confirmed empty (0) - only null vs. 0 differ, but treating them the same
+  // here matters: rendering the chip on `null` was the flicker bug (it'd
+  // show unconditionally for an instant on every page load, then vanish the
+  // moment the real count - often 0 - came back).
+  if (!totalAcrossRoles) return null;
 
   return (
     <>
@@ -100,6 +100,12 @@ export function PendingRequestsModal({
               <span className="text-sm font-bold">Pending Requests</span>
               <button onClick={() => setOpen(false)} className="text-gray-500 hover:text-white text-lg leading-none">✕</button>
             </div>
+
+            {resolveError && (
+              <p className="text-xs text-rose-400 rounded-md border border-rose-500/40 bg-rose-500/10 p-2">
+                {resolveError}
+              </p>
+            )}
 
             <div className="flex gap-1.5">
               {TABS.map((tab) => (
@@ -128,10 +134,22 @@ export function PendingRequestsModal({
                   const busy = busyId === a.id;
                   return (
                     <div key={a.id} className="rounded-md border border-panelborder bg-panel2/60 p-2.5 space-y-2">
-                      {activeTab === "ALL" && (
+                      {(activeTab === "ALL" || a.source === "queue") && (
                         <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                          <RoleIcon role={a.role as Role} size={12} rounded="sm" />
-                          {TAB_LABEL[a.role as Role]}
+                          {activeTab === "ALL" && (
+                            <>
+                              <RoleIcon role={a.role as Role} size={12} rounded="sm" />
+                              {TAB_LABEL[a.role as Role]}
+                            </>
+                          )}
+                          {a.source === "queue" && (
+                            <span
+                              className="chip border border-accent/50 bg-accent/10 text-accent"
+                              title="Proposed automatically by Solo Queue, not applied for directly."
+                            >
+                              Suggested
+                            </span>
+                          )}
                         </div>
                       )}
                       {a.rankedByMain && (
@@ -153,8 +171,17 @@ export function PendingRequestsModal({
                         specTracks={a.specTracks}
                         forDungeonId={dungeonId ?? undefined}
                         raidKills={a.characterRaidKills}
+                        raidGridDefaultOpen={false}
                         meetsRequirement={a.meetsRequirement}
                       />
+                      {a.role === "TANK" && a.route && (
+                        <div className="rounded-md border border-sky-500/40 bg-sky-500/10 p-2 space-y-1">
+                          <div className="text-[10px] uppercase tracking-wide text-sky-300">🗺️ Proposed route</div>
+                          <p className="text-xs text-gray-200 font-mono break-all whitespace-pre-wrap max-h-24 overflow-y-auto">
+                            {a.route}
+                          </p>
+                        </div>
+                      )}
                       {a.note && (
                         <p className="text-xs text-gray-300 rounded-md border border-panelborder bg-panel2/40 p-2 italic">
                           &ldquo;{a.note}&rdquo;
@@ -183,23 +210,13 @@ export function PendingRequestsModal({
             )}
 
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className={cn("chip border border-panelborder text-gray-400", page <= 1 ? "opacity-40" : "hover:bg-panel2")}
-                >
-                  ← Prev
-                </button>
-                <span className="text-[11px] text-gray-500">Page {page} / {totalPages}</span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className={cn("chip border border-panelborder text-gray-400", page >= totalPages ? "opacity-40" : "hover:bg-panel2")}
-                >
-                  Next →
-                </button>
-              </div>
+              <PaginationChips
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="pt-1"
+              />
             )}
           </div>
         </div>

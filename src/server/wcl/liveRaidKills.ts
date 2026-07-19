@@ -1,5 +1,5 @@
 import { RAIDS, type RaidKillDifficulty } from "@/game/raidSeason";
-import type { RaidKillDTO } from "@/data/source";
+import type { RaidKillDTO } from "@/data/dto";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - ported plain-JS module, no type declarations
 import { fetchRaidZones } from "./raidZones.js";

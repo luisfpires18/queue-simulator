@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { CharacterDTO } from "@/data/source";
+import type { CharacterDTO } from "@/data/dto";
 import { classById, specById } from "@/game/classes";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";

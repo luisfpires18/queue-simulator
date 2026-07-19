@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { RaidKillDTO } from "@/data/source";
+import type { RaidKillDTO } from "@/data/dto";
 import { RAIDS, RAID_KILL_DIFFICULTY_LABEL, type RaidKillDifficulty } from "@/game/raidSeason";
 import { WowIcon } from "./WowIcon";
 import { cn } from "@/lib/utils";

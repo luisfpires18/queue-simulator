@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPublicCharacters } from "@/data/source";
+import { getPublicCharacters } from "@/data/characters";
 import { fetchLivePlayerProfile } from "@/data/livePlayer";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { ensureUser, getCurrentSelection, getGroup } from "@/data/source";
+import { ensureUser, getCurrentSelection } from "@/data/users";
+import { getGroup } from "@/data/groups";
 import { ListKeyForm } from "@/components/ListKeyForm";
 import { RaidListForm } from "@/components/RaidListForm";
 import { ListKindTabs } from "@/components/ListKindTabs";
@@ -15,7 +16,10 @@ export default async function ListPage({
 }) {
   const session = await auth();
   const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.user) redirect("/profile");
+  // Checking bnetId, not just user - a session can carry a `user` object
+  // with no bnetId (stale cookie predating this field); ensureUser(bnetId!,
+  // ...) below would otherwise crash instead of redirecting to re-auth.
+  if (!s?.user || !s?.bnetId) redirect("/profile");
 
   const user = await ensureUser(s.bnetId!, s.battletag);
   const current = await getCurrentSelection(user.id);

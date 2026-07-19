@@ -1,45 +1,50 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/source";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
-async function currentUser() {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return null;
-  return ensureUser(s.bnetId, s.battletag);
+const schema = z.object({ enabled: z.boolean(), settings: z.unknown().optional() });
+
+// The settings blob is only ever written by this route, but a malformed row
+// shouldn't 500 the whole preferences UI - fall back to defaults and log.
+function parseSettings(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error("notification preferences: malformed settings JSON", err);
+    return {};
+  }
 }
 
 export async function GET() {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const pref = await prisma.notificationPreference.findUnique({ where: { userId: user.id } });
+  const pref = await prisma.notificationPreference.findUnique({ where: { userId: ctx.user.id } });
   return NextResponse.json({
     enabled: pref?.enabled ?? false,
-    settings: pref ? JSON.parse(pref.settings) : {},
+    settings: pref ? parseSettings(pref.settings) : {},
   });
 }
 
 export async function PUT(req: Request) {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body.enabled !== "boolean") {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
+  const body = await parseBody(req, schema, "Invalid body");
+  if (!body.ok) return body.response;
 
-  const existing = await prisma.notificationPreference.findUnique({ where: { userId: user.id } });
-  const mergedSettings = { ...(existing ? JSON.parse(existing.settings) : {}), ...(body.settings ?? {}) };
+  const existing = await prisma.notificationPreference.findUnique({ where: { userId: ctx.user.id } });
+  const incoming = (body.data.settings as Record<string, unknown> | null | undefined) ?? {};
+  const mergedSettings = { ...(existing ? parseSettings(existing.settings) : {}), ...incoming };
 
   const pref = await prisma.notificationPreference.upsert({
-    where: { userId: user.id },
-    create: { userId: user.id, enabled: body.enabled, settings: JSON.stringify(mergedSettings) },
-    update: { enabled: body.enabled, settings: JSON.stringify(mergedSettings) },
+    where: { userId: ctx.user.id },
+    create: { userId: ctx.user.id, enabled: body.data.enabled, settings: JSON.stringify(mergedSettings) },
+    update: { enabled: body.data.enabled, settings: JSON.stringify(mergedSettings) },
   });
 
-  return NextResponse.json({ enabled: pref.enabled, settings: JSON.parse(pref.settings) });
+  return NextResponse.json({ enabled: pref.enabled, settings: parseSettings(pref.settings) });
 }

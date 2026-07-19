@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs grep -l \"npm-flag\\\\|country-flag\\\\|flag-icons\\\\|circle-flags\\\\|world-flags\")"
+      "Bash(xargs grep -l \"npm-flag\\\\|country-flag\\\\|flag-icons\\\\|circle-flags\\\\|world-flags\")",
+      "Read(//d/Workspaces/queue_simulator/src/app/api/profile/settings/**)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npm test 2>&1)",
+      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped orphan dev server\" } else { \"port 3200 free\" })",
+      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped\" } else { \"already free\" })"
     ]
   }
 }

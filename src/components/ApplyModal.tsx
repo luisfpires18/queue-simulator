@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ApplicationDTO, CurrentSelectionDTO, GroupDTO } from "@/data/source";
+import type { ApplicationDTO, CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { specById, type Role } from "@/game/classes";
 import { DUNGEON_BY_ID } from "@/game/season";
 import { RAID_BY_ID, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/raidSeason";
@@ -15,9 +15,8 @@ import { RoleIcon } from "./RoleIcon";
 import { ApplyCoverageSection } from "./ApplyCoverageSection";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
+import { ROLE_LABEL } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
-
-const ROLE_LABEL: Record<Role, string> = { TANK: "Tank", HEALER: "Healer", DPS: "DPS" };
 
 export function ApplyModal({
   group, current, open, onClose, onApplied,
@@ -33,6 +32,8 @@ export function ApplyModal({
   const raid = group.raidId ? RAID_BY_ID[group.raidId] : undefined;
   const [note, setNote] = useState("");
   const [originalNote, setOriginalNote] = useState("");
+  const [route, setRoute] = useState("");
+  const [originalRoute, setOriginalRoute] = useState("");
   const [existing, setExisting] = useState<ApplicationDTO | null | undefined>(undefined); // undefined = loading
   const [declinedCount, setDeclinedCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -51,6 +52,8 @@ export function ApplyModal({
     setExisting(undefined);
     setNote("");
     setOriginalNote("");
+    setRoute("");
+    setOriginalRoute("");
     fetch(`/api/groups/${group.id}/my-application`)
       .then((r) => r.json())
       .then((data) => {
@@ -60,6 +63,10 @@ export function ApplyModal({
         if (app?.status === "pending" && app.note) {
           setNote(app.note);
           setOriginalNote(app.note);
+        }
+        if (app?.status === "pending" && app.route) {
+          setRoute(app.route);
+          setOriginalRoute(app.route);
         }
       })
       .catch(() => setExisting(null));
@@ -71,6 +78,9 @@ export function ApplyModal({
   const specId = current?.specId ?? "";
   const role = (specById(specId)?.role ?? "DPS") as Role;
   const hasOpenSlot = owner ? group.slots.some((s) => s.role === role) : false;
+  // M+ only, tank applicants only - lets the leader review a proposed pull
+  // route before accepting. Optional; never shown for raid or non-tank.
+  const showRoute = !isRaid && role === "TANK";
 
   const actualSpecIds = [...group.members.map((m) => m.broughtSpecId ?? m.specId), specId];
   const desiredSpecIds = [
@@ -92,7 +102,11 @@ export function ApplyModal({
       const res = await fetch(`/api/groups/${group.id}/apply`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ characterId: owner.id, specId, role, note: note.trim() || null }),
+        body: JSON.stringify({
+          characterId: owner.id, specId, role,
+          note: note.trim() || null,
+          route: showRoute ? route.trim() || null : null,
+        }),
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
@@ -109,6 +123,7 @@ export function ApplyModal({
       const data = await res.json();
       setExisting(data.application);
       setOriginalNote(note.trim());
+      setOriginalRoute(route.trim());
       onApplied?.(data.application);
     } catch (e) {
       setErr(`Network error: ${e instanceof Error ? e.message : "unknown"}`);
@@ -174,6 +189,23 @@ export function ApplyModal({
               <p className="text-xs text-rose-300">No open {ROLE_LABEL[role].toLowerCase()} slot in this group.</p>
             )}
 
+            {showRoute && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
+                  Route (optional) - so the leader can review your pull plan
+                </label>
+                <textarea
+                  value={route}
+                  onChange={(e) => setRoute(e.target.value)}
+                  maxLength={4000}
+                  rows={3}
+                  disabled={resolved}
+                  placeholder="Paste your MDT route link or import string..."
+                  className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-xs font-mono resize-none disabled:opacity-60"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
                 Note (optional)
@@ -220,7 +252,10 @@ export function ApplyModal({
             ) : (
               <button
                 onClick={submit}
-                disabled={submitting || (pending && note.trim() === originalNote.trim())}
+                disabled={
+                  submitting ||
+                  (pending && note.trim() === originalNote.trim() && (!showRoute || route.trim() === originalRoute.trim()))
+                }
                 className="btn-gold w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? "Sending…" : existing?.status === "declined" ? "Apply again" : pending ? "Update application" : "Send application"}

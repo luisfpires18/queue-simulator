@@ -1,44 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CurrentSelectionDTO, GroupDTO } from "@/data/source";
-import { specById, type Role } from "@/game/classes";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
+import { type Role } from "@/game/classes";
 import { DUNGEONS, DUNGEON_BY_ID } from "@/game/season";
-import {
-  computeBuffCoverage, computeUtilityCoverage, computeDefensiveCoverage, computeExternalDefensiveCoverage,
-  computeDispelCoverage, computeEnemyDispelCoverage,
-} from "@/game/coverage";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
+import { ErrorModal } from "./ErrorModal";
 import {
-  ROLE_LABEL, ComboEditor, CoveragePanel, CoverageCol, SlotPrefPicker, Field, type ComboMember,
+  ROLE_LABEL, ComboEditor, CoveragePanel, SlotPrefPicker, Field, UtilityCoveragePanel,
+  resolveListingOwner, slotLabels, submitListingRequest, toLocalInputValue,
+  useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
 
 const MIN_KEY = 2;
 const MAX_KEY = 25;
 
-interface Slot { role: Role; prefs: string[] }
-
 // remaining slots to complete 1 tank / 1 healer / 3 dps after the owner's role
-function openSlotsFor(ownerRole: Role): Slot[] {
+function openSlotsFor(ownerRole: Role): FormSlot[] {
   const need: Record<Role, number> = { TANK: 1, HEALER: 1, DPS: 3 };
   need[ownerRole] -= 1;
-  const slots: Slot[] = [];
+  const slots: FormSlot[] = [];
   (["TANK", "HEALER", "DPS"] as Role[]).forEach((r) => {
     for (let i = 0; i < need[r]; i++) slots.push({ role: r, prefs: [] });
   });
   return slots;
-}
-
-let comboSeq = 0;
-
-/** ISO string -> the local value a <input type="datetime-local"> expects. */
-function toLocalInputValue(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function ListKeyForm({
@@ -65,27 +54,21 @@ export function ListKeyForm({
   const title = `+${keyLevel} ${DUNGEON_BY_ID[dungeonId]?.name ?? ""}`;
 
   const [description, setDescription] = useState(editGroup?.description ?? "");
+  const [route, setRoute] = useState(editGroup?.route ?? "");
 
   const [startMode, setStartMode] = useState<"now" | "pick">(editGroup?.startsAt ? "pick" : "now");
   const [startAt, setStartAt] = useState(editGroup?.startsAt ? toLocalInputValue(editGroup.startsAt) : "");
 
-  // Who you're listing as — set globally via the navbar's current-character
-  // picker when LISTING a new key, but a key you're EDITING already has its
-  // own owner/spec (slot 0) fixed at listing time. Editing must keep using
-  // that, not silently reassign the key to whatever character/spec happens
-  // to be selected in the navbar right now (e.g. you listed with an alt,
-  // then switched your navbar character to your main before opening Edit).
-  const editOwnerMember = editGroup?.members.find((m) => m.slot === 0) ?? null;
-  const owner = editOwnerMember ?? current.character;
-  const ownerSpecId = editOwnerMember?.broughtSpecId ?? current.specId;
-  const ownerRole = (specById(ownerSpecId)?.role ?? "DPS") as Role;
+  // Who you're listing as — see resolveListingOwner: fixed to this key's
+  // original owner/spec (slot 0) when editing, the navbar picker otherwise.
+  const { owner, ownerSpecId, ownerRole } = resolveListingOwner(current, editGroup);
 
   // open slots rebuild only when the owner's role actually changes (e.g. the
   // navbar character picker switches spec) — not on mount, so loading an
   // existing key's slots (edit mode) doesn't get clobbered. Comparing against
   // the last-seen role (rather than a "have we run yet" flag) keeps this safe
   // under React Strict Mode's dev double-invoke of effects.
-  const [slots, setSlots] = useState<Slot[]>(
+  const [slots, setSlots] = useState<FormSlot[]>(
     () => editGroup?.slots.map((s) => ({ role: s.role as Role, prefs: s.prefs })) ?? openSlotsFor(ownerRole)
   );
   const prevOwnerRole = useRef(ownerRole);
@@ -98,72 +81,15 @@ export function ListKeyForm({
   const setSlotPrefs = (i: number, prefs: string[]) =>
     setSlots((prev) => prev.map((s, idx) => (idx === i ? { ...s, prefs } : s)));
 
-  // ---- pre-made-group combos (2-4 members, an alternative to per-slot picks) ----
-  // A desired comp is a bundle of specs (not your own characters) — e.g. a
+  // Pre-made-group combos (2-4 members, an alternative to per-slot picks) -
+  // a desired comp is a bundle of specs (not your own characters), e.g. a
   // known-good trio you'd want to see show up together in one group.
-  const [combos, setCombos] = useState<{ key: number; members: ComboMember[] }[]>(
-    () => editGroup?.combos.map((combo) => ({ key: comboSeq++, members: combo.map((m) => ({ role: m.role as Role, specId: m.specId })) })) ?? []
-  );
-  const addCombo = () => setCombos((prev) => [...prev, { key: comboSeq++, members: [] }]);
-  const removeCombo = (key: number) => setCombos((prev) => prev.filter((c) => c.key !== key));
-  const addComboMember = (key: number, specId: string) => {
-    const role = specById(specId)!.role as Role;
-    setCombos((prev) =>
-      prev.map((c) =>
-        c.key === key && c.members.length < 4
-          ? { ...c, members: [...c.members, { role, specId }] }
-          : c
-      )
-    );
-  };
-  const removeComboMember = (key: number, i: number) =>
-    setCombos((prev) => prev.map((c) => (c.key === key ? { ...c, members: c.members.filter((_, j) => j !== i) } : c)));
+  const { combos, addCombo, removeCombo, addComboMember, removeComboMember, prefMode, switchPrefMode } =
+    useComboBuilder(editGroup, 4, setSlots);
 
-  // Per-slot preferences and desired comps are mutually exclusive ways of
-  // expressing what the group wants — picking one clears the other.
-  const [prefMode, setPrefMode] = useState<"slots" | "combo">(
-    () => (editGroup?.combos.length ? "combo" : "slots")
-  );
-  const switchPrefMode = (mode: "slots" | "combo") => {
-    if (mode === prefMode) return;
-    if (mode === "slots") setCombos([]);
-    else setSlots((prev) => prev.map((s) => ({ ...s, prefs: [] })));
-    setPrefMode(mode);
-  };
-
-  // HAVE = you (actual). WANT = every spec you've listed as acceptable, across
-  // all ranked slot prefs and desired-comp members (whichever mode is active).
-  const desiredSpecIds = useMemo(
-    () => [
-      ...slots.flatMap((s) => s.prefs),
-      ...combos.flatMap((c) => c.members.map((m) => m.specId)),
-    ],
-    [slots, combos]
-  );
-  const buffCoverage = useMemo(
-    () => computeBuffCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
-  const utilityCoverage = useMemo(
-    () => computeUtilityCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
-  const defensiveCoverage = useMemo(
-    () => computeDefensiveCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
-  const externalDefensiveCoverage = useMemo(
-    () => computeExternalDefensiveCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
-  const dispelCoverage = useMemo(
-    () => computeDispelCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
-  const enemyDispelCoverage = useMemo(
-    () => computeEnemyDispelCoverage([ownerSpecId], desiredSpecIds),
-    [ownerSpecId, desiredSpecIds]
-  );
+  const {
+    buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage,
+  } = useListingCoverage(ownerSpecId, slots, combos);
 
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -171,50 +97,37 @@ export function ListKeyForm({
   const submit = async () => {
     setErr(null);
     if (!ownerSpecId) { setErr("Pick a spec to play."); return; }
+    if (ownerRole === "TANK" && !route.trim()) { setErr("Route is required when tanking this key."); return; }
     if (prefMode === "combo") {
       const badCombo = combos.find((c) => c.members.length < 2);
       if (badCombo) { setErr("A combo needs at least 2 members (or remove it)."); return; }
     }
     setSubmitting(true);
-    try {
-      const res = await fetch(editGroup ? `/api/groups/${editGroup.id}` : "/api/groups", {
-        method: editGroup ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description: description.trim() || null,
-          dungeonId, keyLevel, ownerRole,
-          ownerCharacterId: owner.id, ownerSpecId,
-          startsAt: startMode === "pick" && startAt ? new Date(startAt).toISOString() : null,
-          slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
-          combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
-          requirementType: requirementType === "none" ? null : requirementType,
-          reqRating: requirementType === "rating" ? reqRating : null,
-          reqLevel: requirementType === "resilient" || requirementType === "custom" ? reqLevel : null,
-          reqExtraCount: requirementType === "custom" ? reqExtraCount : null,
-          reqExtraLevel: requirementType === "custom" ? reqExtraLevel : null,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        const action = editGroup ? "Update" : "List";
-        setErr(res.status === 401 ? "Session expired - log in again." : `${action} failed (${res.status}). ${body.slice(0, 140)}`);
-        setSubmitting(false);
-        return;
-      }
-      // Force a full navigation so a stale client bundle can't leave us hanging.
-      window.location.assign("/runs");
-    } catch (e) {
-      setErr(`Network error: ${e instanceof Error ? e.message : "unknown"}`);
+    const error = await submitListingRequest(editGroup, {
+      title,
+      description: description.trim() || null,
+      route: route.trim() || null,
+      dungeonId, keyLevel, ownerRole,
+      ownerCharacterId: owner.id, ownerSpecId,
+      startsAt: startMode === "pick" && startAt ? new Date(startAt).toISOString() : null,
+      slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
+      combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
+      requirementType: requirementType === "none" ? null : requirementType,
+      reqRating: requirementType === "rating" ? reqRating : null,
+      reqLevel: requirementType === "resilient" || requirementType === "custom" ? reqLevel : null,
+      reqExtraCount: requirementType === "custom" ? reqExtraCount : null,
+      reqExtraLevel: requirementType === "custom" ? reqExtraLevel : null,
+    });
+    if (error) {
+      setErr(error);
       setSubmitting(false);
+      return;
     }
+    // Force a full navigation so a stale client bundle can't leave us hanging.
+    window.location.assign("/runs");
   };
 
-  // label DPS slots #1, #2, #3 for clarity
-  const dpsIndex: number[] = [];
-  let d = 0;
-  slots.forEach((s) => dpsIndex.push(s.role === "DPS" ? ++d : 0));
-  const dpsTotal = slots.filter((s) => s.role === "DPS").length;
+  const labels = slotLabels(slots);
 
   return (
     <div className="space-y-6">
@@ -233,6 +146,17 @@ export function ListKeyForm({
             maxLength={500}
             rows={2}
             className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-sm resize-none"
+          />
+        </Field>
+
+        <Field label={`Route (Mythic Dungeon Tools) - ${ownerRole === "TANK" ? "required for Tank" : "optional"}`}>
+          <textarea
+            value={route}
+            onChange={(e) => setRoute(e.target.value)}
+            maxLength={4000}
+            rows={3}
+            placeholder="Paste your MDT route link or import string..."
+            className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-xs font-mono resize-none"
           />
         </Field>
 
@@ -396,7 +320,7 @@ export function ListKeyForm({
               <SlotPrefPicker
                 key={i}
                 role={s.role}
-                label={s.role === "DPS" && dpsTotal > 1 ? `DPS #${dpsIndex[i]}` : ROLE_LABEL[s.role]}
+                label={labels[i]}
                 value={s.prefs}
                 onChange={(v) => setSlotPrefs(i, v)}
               />
@@ -428,23 +352,7 @@ export function ListKeyForm({
       <CoveragePanel title="Buffs & Debuffs" coverage={buffCoverage} />
 
       {/* utility: lust/res + external/party utility, same have/want/missing shape */}
-      <div className="panel p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Utility</div>
-          {utilityCoverage.warning && (
-            <div className="chip bg-rose-500/15 border border-rose-500/50 text-rose-200">
-              ⚠ Missing {utilityCoverage.lust === "missing" ? "Bloodlust" : ""}
-              {utilityCoverage.lust === "missing" && utilityCoverage.res === "missing" ? " & " : ""}
-              {utilityCoverage.res === "missing" ? "Battle Res" : ""}
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <CoverageCol title="Have" items={utilityCoverage.have} status="have" />
-          <CoverageCol title="Want" items={utilityCoverage.want} status="want" />
-          <CoverageCol title="Missing" items={utilityCoverage.missing} status="missing" />
-        </div>
-      </div>
+      <UtilityCoveragePanel coverage={utilityCoverage} />
 
       {/* friendly dispels: Magic/Curse/Poison/Disease/Bleed removal */}
       <CoveragePanel title="Friendly Dispels" coverage={dispelCoverage} />
@@ -458,10 +366,21 @@ export function ListKeyForm({
       {/* external defensives: single-target cooldowns, same have/want/missing shape */}
       <CoveragePanel title="External Defensives" coverage={externalDefensiveCoverage} />
 
-      {err && <p className="text-rose-400 text-sm">{err}</p>}
-      <button onClick={submit} disabled={submitting} className="btn-gold">
-        {editGroup ? (submitting ? "Saving…" : "Save changes") : (submitting ? "Listing…" : "List key")}
-      </button>
+      <div className="flex items-center gap-3">
+        <Link href="/runs" className="btn-ghost">
+          ← Go back
+        </Link>
+        <button onClick={submit} disabled={submitting} className="btn-gold">
+          {editGroup ? (submitting ? "Saving…" : "Save changes") : (submitting ? "Listing…" : "List key")}
+        </button>
+      </div>
+
+      <ErrorModal
+        open={err != null}
+        title={editGroup ? "Couldn't save changes" : "Couldn't list your key"}
+        message={err ?? ""}
+        onClose={() => setErr(null)}
+      />
     </div>
   );
 }

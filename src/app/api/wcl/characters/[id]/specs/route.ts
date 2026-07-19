@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setSpecTracks } from "@/data/source";
+import { setSpecTracks } from "@/data/characters";
 import { specById } from "@/game/classes";
 import { requireUser, loadOwnedCharacter, errorResponse, ApiError } from "@/server/wclHelpers";
 

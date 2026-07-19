@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCharacterRatingSummary } from "@/data/source";
+import { getCharacterRatingSummary } from "@/data/characters";
 
 export const dynamic = "force-dynamic";
 

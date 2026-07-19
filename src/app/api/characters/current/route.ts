@@ -1,31 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
-import { ensureUser, getUserCharacters, setCurrentSelection } from "@/data/source";
-import { specById } from "@/game/classes";
+import { setCurrentSelection } from "@/data/users";
+import { specMatchingClass } from "@/server/guards";
+import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
 const schema = z.object({ characterId: z.string(), specId: z.string() });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const parsed = schema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  const body = await parseBody(req, schema, "Bad request");
+  if (!body.ok) return body.response;
 
-  const user = await ensureUser(s.bnetId, s.battletag);
-  const chars = await getUserCharacters(user.id);
-  const target = chars.find((c) => c.id === parsed.data.characterId && c.bucket !== "hidden");
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const target = await findOwnedCharacter(ctx.user.id, body.data.characterId);
+  // Hidden characters can't be the navbar's current selection.
+  if (!target || target.bucket === "hidden") return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const spec = specById(parsed.data.specId);
-  if (!spec || spec.classId !== target.classId) {
+  if (!specMatchingClass(target.classId, body.data.specId)) {
     return NextResponse.json({ error: "Spec doesn't match this character's class" }, { status: 400 });
   }
 
-  await setCurrentSelection(user.id, target.id, parsed.data.specId);
+  await setCurrentSelection(ctx.user.id, target.id, body.data.specId);
   return NextResponse.json({ ok: true });
 }

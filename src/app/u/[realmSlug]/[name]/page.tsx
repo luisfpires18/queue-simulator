@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getPublicCharacters } from "@/data/source";
+import { getPublicCharacters } from "@/data/characters";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
 import { bestSpecFor } from "@/game/roster";

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CurrentSelectionDTO, RosterCharacterDTO } from "@/data/source";
+import type { CurrentSelectionDTO, RosterCharacterDTO } from "@/data/dto";
 import { CLASS_BY_ID, specById, classById, type ClassId } from "@/game/classes";
 import { bestSpecFor } from "@/game/roster";
 import { classIconSlug } from "@/game/icons";

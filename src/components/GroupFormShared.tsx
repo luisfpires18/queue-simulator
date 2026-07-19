@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { ALL_SPECS, specById, isRangedDps, CLASS_BY_ID, type Role } from "@/game/classes";
-import { type CoverageItem, type CoverageStatus } from "@/game/coverage";
+import {
+  computeBuffCoverage, computeUtilityCoverage, computeDefensiveCoverage, computeExternalDefensiveCoverage,
+  computeDispelCoverage, computeEnemyDispelCoverage,
+  type CoverageItem, type CoverageStatus,
+} from "@/game/coverage";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
@@ -22,6 +27,149 @@ export const SPECS_BY_ROLE: Record<Role, typeof ALL_SPECS> = {
 };
 
 export interface ComboMember { role: Role; specId: string }
+
+export interface FormSlot { role: Role; prefs: string[] }
+
+/** ISO string -> the local value a <input type="datetime-local"> expects. */
+export function toLocalInputValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "Who you're listing as": the navbar's current character/spec for a NEW
+ * listing, but a group being EDITED keeps its own owner/spec (slot 0) fixed
+ * at listing time - editing must not silently reassign the listing to
+ * whatever character happens to be selected in the navbar right now. */
+export function resolveListingOwner(current: CurrentSelectionDTO, editGroup: GroupDTO | null | undefined) {
+  const editOwnerMember = editGroup?.members.find((m) => m.slot === 0) ?? null;
+  const owner = editOwnerMember ?? current.character;
+  const ownerSpecId = editOwnerMember?.broughtSpecId ?? current.specId;
+  const ownerRole = (specById(ownerSpecId)?.role ?? "DPS") as Role;
+  return { editOwnerMember, owner, ownerSpecId, ownerRole };
+}
+
+let comboSeq = 0;
+
+export interface ComboDraft { key: number; members: ComboMember[] }
+
+/** The desired-comps builder state shared verbatim by both listing forms:
+ * combo add/remove/edit plus the per-slot-prefs vs. combos mode toggle
+ * (mutually exclusive ways of expressing what the group wants - picking one
+ * clears the other). `maxMembers` is read at call time, so a raid form
+ * whose roster size changes keeps enforcing the current cap. */
+export function useComboBuilder(
+  editGroup: GroupDTO | null | undefined,
+  maxMembers: number,
+  setSlots: React.Dispatch<React.SetStateAction<FormSlot[]>>
+) {
+  const [combos, setCombos] = useState<ComboDraft[]>(
+    () => editGroup?.combos.map((combo) => ({ key: comboSeq++, members: combo.map((m) => ({ role: m.role as Role, specId: m.specId })) })) ?? []
+  );
+  const addCombo = () => setCombos((prev) => [...prev, { key: comboSeq++, members: [] }]);
+  const removeCombo = (key: number) => setCombos((prev) => prev.filter((c) => c.key !== key));
+  const addComboMember = (key: number, specId: string) => {
+    const role = specById(specId)!.role as Role;
+    setCombos((prev) =>
+      prev.map((c) =>
+        c.key === key && c.members.length < maxMembers
+          ? { ...c, members: [...c.members, { role, specId }] }
+          : c
+      )
+    );
+  };
+  const removeComboMember = (key: number, i: number) =>
+    setCombos((prev) => prev.map((c) => (c.key === key ? { ...c, members: c.members.filter((_, j) => j !== i) } : c)));
+
+  const [prefMode, setPrefMode] = useState<"slots" | "combo">(
+    () => (editGroup?.combos.length ? "combo" : "slots")
+  );
+  const switchPrefMode = (mode: "slots" | "combo") => {
+    if (mode === prefMode) return;
+    if (mode === "slots") setCombos([]);
+    else setSlots((prev) => prev.map((s) => ({ ...s, prefs: [] })));
+    setPrefMode(mode);
+  };
+
+  return { combos, addCombo, removeCombo, addComboMember, removeComboMember, prefMode, switchPrefMode };
+}
+
+/** HAVE = the listing owner (actual). WANT = every spec listed as
+ * acceptable, across all ranked slot prefs and desired-comp members
+ * (whichever mode is active). The six coverage panels both forms render. */
+export function useListingCoverage(ownerSpecId: string, slots: FormSlot[], combos: ComboDraft[]) {
+  const desiredSpecIds = useMemo(
+    () => [
+      ...slots.flatMap((s) => s.prefs),
+      ...combos.flatMap((c) => c.members.map((m) => m.specId)),
+    ],
+    [slots, combos]
+  );
+  const buffCoverage = useMemo(() => computeBuffCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const utilityCoverage = useMemo(() => computeUtilityCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const defensiveCoverage = useMemo(() => computeDefensiveCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const externalDefensiveCoverage = useMemo(() => computeExternalDefensiveCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const dispelCoverage = useMemo(() => computeDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  const enemyDispelCoverage = useMemo(() => computeEnemyDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  return { buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage };
+}
+
+/** DPS slots labeled "DPS #1/#2/#3" when there's more than one; other roles
+ * (and a lone DPS slot) keep the plain role label. */
+export function slotLabels(slots: FormSlot[]): string[] {
+  const dpsTotal = slots.filter((s) => s.role === "DPS").length;
+  let d = 0;
+  return slots.map((s) => (s.role === "DPS" && dpsTotal > 1 ? `DPS #${++d}` : ROLE_LABEL[s.role]));
+}
+
+/** POST/PATCH a listing to /api/groups[/id]. Returns the user-facing error
+ * string on failure, or null on success (caller navigates away). */
+export async function submitListingRequest(editGroup: GroupDTO | null | undefined, payload: unknown): Promise<string | null> {
+  try {
+    const res = await fetch(editGroup ? `/api/groups/${editGroup.id}` : "/api/groups", {
+      method: editGroup ? "PATCH" : "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const parsedError = (() => {
+        try { return JSON.parse(body).error as string | undefined; } catch { return undefined; }
+      })();
+      const action = editGroup ? "Update" : "List";
+      return res.status === 401
+        ? "Session expired - log in again."
+        : parsedError ?? `${action} failed (${res.status}). ${body.slice(0, 140)}`;
+    }
+    return null;
+  } catch (e) {
+    return `Network error: ${e instanceof Error ? e.message : "unknown"}`;
+  }
+}
+
+/** The Utility coverage panel (lust/res warning chip + have/want/missing
+ * columns) rendered identically by both forms and GroupDetailsModal. */
+export function UtilityCoveragePanel({ coverage }: { coverage: ReturnType<typeof computeUtilityCoverage> }) {
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Utility</div>
+        {coverage.warning && (
+          <div className="chip bg-rose-500/15 border border-rose-500/50 text-rose-200">
+            ⚠ Missing {coverage.lust === "missing" ? "Bloodlust" : ""}
+            {coverage.lust === "missing" && coverage.res === "missing" ? " & " : ""}
+            {coverage.res === "missing" ? "Battle Res" : ""}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <CoverageCol title="Have" items={coverage.have} status="have" />
+        <CoverageCol title="Want" items={coverage.want} status="want" />
+        <CoverageCol title="Missing" items={coverage.missing} status="missing" />
+      </div>
+    </div>
+  );
+}
 
 export function ComboEditor({
   members, ownerSpecId, maxMembers = 4, onAdd, onRemove, onDelete,

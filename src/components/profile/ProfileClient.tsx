@@ -9,7 +9,7 @@ import { NotificationsTab } from "./NotificationsTab";
 import { SettingsTab } from "./SettingsTab";
 import { WowIcon } from "@/components/WowIcon";
 import { MISC_ICON } from "@/game/icons";
-import type { RaidKillDTO } from "@/data/source";
+import type { RaidKillDTO } from "@/data/dto";
 
 interface SpecTrack {
   specId: string;

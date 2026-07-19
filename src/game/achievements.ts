@@ -1,5 +1,5 @@
 import { DUNGEONS } from "./season";
-import type { SpecTrackDTO, DungeonBestRun } from "@/data/source";
+import type { SpecTrackDTO, DungeonBestRun } from "@/data/dto";
 
 // raider.io's `dungeon` string and our own DUNGEONS[].name can differ in
 // punctuation (apostrophe placement, colons, dashes) even when they mean the

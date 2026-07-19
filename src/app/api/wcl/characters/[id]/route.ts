@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { setCharacterWclZone } from "@/data/source";
+import { setCharacterWclZone } from "@/data/characters";
 import { requireUser, loadOwnedCharacter, errorResponse } from "@/server/wclHelpers";
 
 export const dynamic = "force-dynamic";

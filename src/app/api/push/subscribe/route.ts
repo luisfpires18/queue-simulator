@@ -1,28 +1,27 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/source";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
+const schema = z.object({
+  endpoint: z.string().min(1),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+});
+
 export async function POST(req: Request) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const body = await req.json().catch(() => null);
-  const endpoint = body?.endpoint;
-  const p256dh = body?.keys?.p256dh;
-  const auth_ = body?.keys?.auth;
-  if (!endpoint || !p256dh || !auth_) {
-    return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
-  }
+  const body = await parseBody(req, schema, "Invalid subscription");
+  if (!body.ok) return body.response;
 
-  const user = await ensureUser(s.bnetId, s.battletag);
+  const { endpoint, keys } = body.data;
   await prisma.pushSubscription.upsert({
     where: { endpoint },
-    create: { userId: user.id, endpoint, p256dh, auth: auth_ },
-    update: { userId: user.id, p256dh, auth: auth_ },
+    create: { userId: ctx.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+    update: { userId: ctx.user.id, p256dh: keys.p256dh, auth: keys.auth },
   });
 
   return NextResponse.json({ ok: true });

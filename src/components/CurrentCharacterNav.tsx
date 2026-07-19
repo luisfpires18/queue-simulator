@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
-import { ensureUser, getUserCharacters, getSpecTracks, getCurrentSelection } from "@/data/source";
+import { ensureUser, getCurrentSelection } from "@/data/users";
+import { getUserCharacters, getSpecTracks } from "@/data/characters";
 import { CurrentCharacterPicker } from "./CurrentCharacterPicker";
 
 // Server component: resolves the navbar's global "current character" (who

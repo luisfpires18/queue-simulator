@@ -42,13 +42,27 @@ const baseFields = {
   reqExtraLevel: z.number().int().min(2).max(40).nullish(),
 };
 
-const mplusGroupSchema = z.object({
-  ...baseFields,
-  kind: z.literal("mplus").default("mplus"),
-  dungeonId: z.string(),
-  keyLevel: z.number().int().min(2).max(40),
-  combos: combosSchema(4),
-});
+const mplusGroupSchema = z
+  .object({
+    ...baseFields,
+    kind: z.literal("mplus").default("mplus"),
+    dungeonId: z.string(),
+    keyLevel: z.number().int().min(2).max(40),
+    combos: combosSchema(4),
+    // Mythic Dungeon Tools route link/import string - mandatory when the
+    // owner is tanking (see superRefine below), optional otherwise. Raid
+    // listings never get this field at all (see raidGroupSchema).
+    route: z.string().max(4000).nullish(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.ownerRole === "TANK" && !data.route?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["route"],
+        message: "Route is required when tanking this key.",
+      });
+    }
+  });
 
 const raidGroupSchema = z
   .object({

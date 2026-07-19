@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ApplicationDTO, CharacterRatingSummaryDTO, ComboMember, CurrentSelectionDTO, GroupDTO } from "@/data/source";
+import { useQueryClient } from "@tanstack/react-query";
+import type { ApplicationDTO, CharacterRatingSummaryDTO, ComboMember, CurrentSelectionDTO, GroupDTO, MyApplicationStateDTO } from "@/data/dto";
 import { DUNGEON_BY_ID } from "@/game/season";
 import { RAID_BY_ID, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/raidSeason";
 import { MISC_ICON } from "@/game/icons";
@@ -13,8 +14,14 @@ import { WowIcon } from "./WowIcon";
 import { ApplyModal } from "./ApplyModal";
 import { PendingRequestsModal } from "./PendingRequestsModal";
 import { CharacterRatingModal } from "./CharacterRatingModal";
+import { GroupDetailsModal } from "./GroupDetailsModal";
+import { CountdownLight } from "./CountdownLight";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MAX_APPLICATION_DECLINES } from "@/game/applications";
+import { ROLE_LABEL } from "./GroupFormShared";
+import { requirementChipLabel, startInfo } from "@/lib/format";
+import { apiFetch } from "@/lib/api-client";
+import { queryKeys, useMyApplication, type MyApplicationResponse } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 type CardSlot =
@@ -40,24 +47,6 @@ function specColor(specId?: string | null): string | undefined {
   return sp ? CLASS_BY_ID[sp.classId]?.color : undefined;
 }
 
-/** Compact label for the optional applicant-requirement chip - advisory
- * only, see src/game/achievements.ts. */
-function requirementChipLabel(group: GroupDTO): string | null {
-  switch (group.requirementType) {
-    case "rating":
-      return group.reqRating != null ? `${group.reqRating}+ rating` : null;
-    case "resilient":
-      return group.reqLevel != null ? `Resilient +${group.reqLevel}` : null;
-    case "custom":
-      return group.reqLevel != null && group.reqExtraCount != null && group.reqExtraLevel != null
-        ? `Resilient +${group.reqLevel} · ${group.reqExtraCount}×${group.reqExtraLevel}`
-        : null;
-    default:
-      return null;
-  }
-}
-
-const ROLE_LABEL: Record<string, string> = { TANK: "Tank", HEALER: "Healer", DPS: "DPS" };
 const ROLE_BORDER: Record<string, string> = {
   TANK: "border-sky-400/40",
   HEALER: "border-emerald-400/40",
@@ -99,13 +88,13 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
           </span>
         )}
       </div>
-      <span className="text-[10px] text-gray-500">{ROLE_LABEL[slot.role] ?? "open"}</span>
+      <span className="text-[10px] text-gray-500">{ROLE_LABEL[slot.role as Role] ?? "open"}</span>
 
       {/* hover popover: full ordered accepted specs, in full colour */}
       {slot.prefs.length > 0 && (
         <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20 w-44 panel p-2 shadow-card">
           <div className="text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
-            {ROLE_LABEL[slot.role]} - accepts, in order
+            {ROLE_LABEL[slot.role as Role]} - accepts, in order
           </div>
           <ol className="space-y-1">
             {slot.prefs.map((id, i) => {
@@ -126,52 +115,53 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
   );
 }
 
-function formatStart(startsAt: string | null): string {
-  if (!startsAt) return "Forming now";
-  const d = new Date(startsAt);
-  return `Starts ${d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
-}
-
-export function GroupCard({
-  group, current, canApply, viewerUserId,
+function GroupCardInner({
+  group, current, canApply, viewerUserId, highlighted, onDelisted, initialMyApp,
 }: {
   group: GroupDTO;
   current: CurrentSelectionDTO | null;
   canApply: boolean;
   viewerUserId: string | null;
+  /** Server-rendered seed for the viewer's application state (see
+   * getMyApplicationsByGroup) - first paint shows the real Apply-button
+   * state; the query still revalidates in the background. */
+  initialMyApp?: MyApplicationStateDTO;
+  /** True when this card is the target of a /runs?highlight=<id> deep link
+   * (e.g. Solo Queue's "See Key Listed") - rings it so it stands out from
+   * the rest of the board. */
+  highlighted?: boolean;
+  /** Called right after a successful delist so the caller (BoardClient) can
+   * drop this card from its own `groups` state immediately - the board is
+   * otherwise only ever updated by the 4s SSE tick, so without this the card
+   * would visibly linger for up to 4 seconds after delisting. */
+  onDelisted?: (groupId: string) => void;
 }) {
   const router = useRouter();
   const [applyOpen, setApplyOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [myApp, setMyApp] = useState<ApplicationDTO | null>(null);
-  const [declinedCount, setDeclinedCount] = useState(0);
   const [ratingTarget, setRatingTarget] = useState<{ characterId: string; specId: string } | null>(null);
   const [ratingSummary, setRatingSummary] = useState<CharacterRatingSummaryDTO | null>(null);
   const [ratingLoading, setRatingLoading] = useState(false);
+  const queryClient = useQueryClient();
   const isOwner = viewerUserId != null && viewerUserId === group.ownerUserId;
   const isFull = group.slots.length === 0;
   const isRaid = group.kind === "raid";
   const dungeon = group.dungeonId ? DUNGEON_BY_ID[group.dungeonId] : undefined;
   const raid = group.raidId ? RAID_BY_ID[group.raidId] : undefined;
   const requirementLabel = requirementChipLabel(group);
+  const isConfirmedMember = viewerUserId != null && group.members.some((m) => m.userId === viewerUserId);
 
-  useEffect(() => {
-    if (isOwner || !canApply) return;
-    fetch(`/api/groups/${group.id}/my-application`)
-      .then((r) => r.json())
-      .then((data) => {
-        setMyApp(data.application ?? null);
-        setDeclinedCount(data.declinedCount ?? 0);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group.id, isOwner, canApply]);
+  const { data: myAppData } = useMyApplication(group.id, !isOwner && canApply, initialMyApp);
+  const myApp = myAppData?.application ?? null;
+  const declinedCount = myAppData?.declinedCount ?? 0;
 
   async function deleteGroup() {
     setDeleting(true);
     try {
-      await fetch(`/api/groups/${group.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/groups/${group.id}`, { method: "DELETE" });
+      if (res.ok) onDelisted?.(group.id);
       router.refresh();
     } finally {
       setDeleting(false);
@@ -183,8 +173,7 @@ export function GroupCard({
     setRatingTarget({ characterId, specId });
     setRatingSummary(null);
     setRatingLoading(true);
-    fetch(`/api/characters/${characterId}/rating-summary`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<CharacterRatingSummaryDTO>(`/api/characters/${characterId}/rating-summary`)
       .then((data) => setRatingSummary(data))
       .catch(() => setRatingSummary(null))
       .finally(() => setRatingLoading(false));
@@ -209,7 +198,10 @@ export function GroupCard({
   const cardSlots = [...filled, ...open];
 
   return (
-    <div className="panel p-4 flex flex-col gap-3 relative">
+    <div
+      id={`group-${group.id}`}
+      className={cn("panel p-4 flex flex-col gap-3 relative", highlighted && "ring-2 ring-accent")}
+    >
       {isOwner && (
         <div className="absolute top-3 right-3 flex gap-1.5 z-10">
           <button
@@ -250,11 +242,21 @@ export function GroupCard({
         <span className="ml-auto text-sm text-gray-300 truncate max-w-[45%]">{group.title}</span>
       </div>
       <div className="flex items-center gap-2 -mt-2 text-[11px] text-gray-500">
-        <span>{formatStart(group.startsAt)}</span>
+        <span>{startInfo(group.startsAt).label}</span>
+        <CountdownLight startsAt={group.startsAt} />
         {requirementLabel && (
           <span className="chip border border-panelborder text-gray-400" title="Applicant requirement (advisory only)">
             {requirementLabel}
           </span>
+        )}
+        {!isRaid && group.route && isConfirmedMember && (
+          <button
+            onClick={() => setDetailsOpen(true)}
+            className="chip border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
+            title="This key has a Mythic Dungeon Tools route - click Details to view"
+          >
+            🗺️ Route
+          </button>
         )}
       </div>
       {group.description && <p className="text-xs text-gray-400 -mt-1">{group.description}</p>}
@@ -290,6 +292,12 @@ export function GroupCard({
       )}
 
       <div className="flex items-center mt-auto">
+        <button
+          onClick={() => setDetailsOpen(true)}
+          className="chip border border-panelborder text-gray-400 hover:bg-panel2"
+        >
+          Details
+        </button>
         {isOwner ? (
           <span className="ml-auto text-[11px] text-gray-500">Your key</span>
         ) : myApp?.status === "accepted" ? (
@@ -324,7 +332,12 @@ export function GroupCard({
         current={current}
         open={applyOpen}
         onClose={() => setApplyOpen(false)}
-        onApplied={(app) => setMyApp(app)}
+        onApplied={(app) =>
+          queryClient.setQueryData<MyApplicationResponse>(queryKeys.myApplication(group.id), (prev) => ({
+            application: app,
+            declinedCount: prev?.declinedCount ?? 0,
+          }))
+        }
       />
 
       <ConfirmDialog
@@ -343,7 +356,16 @@ export function GroupCard({
         forDungeonId={group.dungeonId ?? undefined}
         loading={ratingLoading}
         summary={ratingSummary}
+        context={isRaid ? "raid" : "mplus"}
       />
+
+      <GroupDetailsModal group={group} open={detailsOpen} onClose={() => setDetailsOpen(false)} viewerUserId={viewerUserId} />
     </div>
   );
 }
+
+/** Memoized: the live board replaces its `groups` array every 4s SSE tick,
+ * but useLiveBoard preserves object identity for unchanged groups - so an
+ * unchanged card skips re-rendering entirely instead of re-rendering N
+ * cards per tick. */
+export const GroupCard = memo(GroupCardInner);

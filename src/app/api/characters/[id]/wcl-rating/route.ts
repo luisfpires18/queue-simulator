@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchOverview } from "@/server/wcl/api.js";
-import { setSpecPoints } from "@/data/source";
+import { setSpecPoints } from "@/data/characters";
 import { CLASS_BY_ID, type ClassId } from "@/game/classes";
 import { requireUser, loadOwnedCharacter, wclSpecParams, errorResponse, ApiError } from "@/server/wclHelpers";
 

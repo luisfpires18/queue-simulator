@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
-import { ensureUser, reorderBucket } from "@/data/source";
+import { reorderBucket } from "@/data/characters";
+import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,12 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  if (!s?.bnetId) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const ctx = await getSessionUser();
+  if (!ctx) return notAuthenticated();
 
-  const parsed = schema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  const body = await parseBody(req, schema, "Bad request");
+  if (!body.ok) return body.response;
 
-  const user = await ensureUser(s.bnetId, s.battletag);
-  await reorderBucket(user.id, parsed.data.bucket, parsed.data.orderedIds);
+  await reorderBucket(ctx.user.id, body.data.bucket, body.data.orderedIds);
   return NextResponse.json({ ok: true });
 }

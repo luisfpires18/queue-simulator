@@ -48,10 +48,10 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
     try {
       const res = await fetch("/api/characters/sync", { method: "POST" });
       const data = await res.json();
-      setMsg(res.ok ? `Imported ${data.imported} character${data.imported === 1 ? "" : "s"}.` : data.error ?? "Sync failed");
+      setMsg(res.ok ? `Pulled in ${data.imported} character${data.imported === 1 ? "" : "s"}.` : data.error ?? "Couldn't sync - try again.");
       router.refresh();
     } catch {
-      setMsg("Sync failed");
+      setMsg("Couldn't sync - try again.");
     } finally {
       setSyncing(false);
     }
@@ -65,28 +65,28 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
           onClick={() => setTab("characters")}
           icon={MISC_ICON.roster}
           title="Characters"
-          description="Sync your roster, arrange buckets, and set main specs."
+          description="Pull in your roster, sort your alts, pick your mains."
         />
         <TabCard
           active={tab === "improvement"}
           onClick={() => setTab("improvement")}
           icon={MISC_ICON.parse}
-          title="Parse Improvement"
-          description="Compare your parses against top players."
+          title="Parse coaching"
+          description="See how your runs stack up against the best of your spec."
         />
         <TabCard
           active={tab === "notifications"}
           onClick={() => setTab("notifications")}
           icon={MISC_ICON.bell}
           title="Notifications"
-          description="Get pushed when a group opens up at your key level."
+          description="Get a ping when a key opens in your range."
         />
         <TabCard
           active={tab === "settings"}
           onClick={() => setTab("settings")}
           icon={MISC_ICON.settings}
           title="Settings"
-          description="Control what shows on your public profile."
+          description="Decide what other people see on your profile."
         />
       </div>
 
@@ -112,7 +112,7 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
 
       {tab === "characters" ? (
         initial.length === 0 ? (
-          <div className="panel p-10 text-center text-gray-500">No characters yet. Hit "Sync characters".</div>
+          <div className="panel p-10 text-center text-gray-500">Nothing here yet - hit "Sync characters" to pull your roster in.</div>
         ) : (
           <CharacterBoard initial={initial} />
         )

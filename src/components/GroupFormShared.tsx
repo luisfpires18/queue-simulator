@@ -5,7 +5,7 @@ import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { ALL_SPECS, specById, isRangedDps, CLASS_BY_ID, type Role } from "@/game/classes";
 import {
   computeBuffCoverage, computeUtilityCoverage, computeDefensiveCoverage, computeExternalDefensiveCoverage,
-  computeDispelCoverage, computeEnemyDispelCoverage,
+  computeDispelCoverage, computeEnemyDispelCoverage, computeSkipCoverage,
   type CoverageItem, type CoverageStatus,
 } from "@/game/coverage";
 import { SpecIcon } from "./SpecIcon";
@@ -96,7 +96,7 @@ export function useComboBuilder(
 
 /** HAVE = the listing owner (actual). WANT = every spec listed as
  * acceptable, across all ranked slot prefs and desired-comp members
- * (whichever mode is active). The six coverage panels both forms render. */
+ * (whichever mode is active). The coverage panels both forms render. */
 export function useListingCoverage(ownerSpecId: string, slots: FormSlot[], combos: ComboDraft[]) {
   const desiredSpecIds = useMemo(
     () => [
@@ -111,7 +111,8 @@ export function useListingCoverage(ownerSpecId: string, slots: FormSlot[], combo
   const externalDefensiveCoverage = useMemo(() => computeExternalDefensiveCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
   const dispelCoverage = useMemo(() => computeDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
   const enemyDispelCoverage = useMemo(() => computeEnemyDispelCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
-  return { buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage };
+  const skipCoverage = useMemo(() => computeSkipCoverage([ownerSpecId], desiredSpecIds), [ownerSpecId, desiredSpecIds]);
+  return { buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage, skipCoverage };
 }
 
 /** DPS slots labeled "DPS #1/#2/#3" when there's more than one; other roles

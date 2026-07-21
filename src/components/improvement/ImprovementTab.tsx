@@ -123,7 +123,7 @@ export function ImprovementTab({ characters }: { characters: Character[] }) {
   }
 
   if (!usable.length) {
-    return <div className="panel p-6 text-sm text-gray-400">No characters yet - sync from Battle.net on the Characters tab first.</div>;
+    return <div className="panel p-6 text-sm text-gray-400">Nothing here yet - head to the Characters tab and sync from Battle.net first.</div>;
   }
 
   return (
@@ -206,14 +206,14 @@ export function ImprovementTab({ characters }: { characters: Character[] }) {
 
       {activeChar && !activeChar.wclZone && !showSettings && (
         <div className="panel p-4 text-sm text-gray-400">
-          This character has no Warcraft Logs zone configured yet.{" "}
+          You haven't picked this character's Warcraft Logs zone yet.{" "}
           <button onClick={() => setShowSettings(true)} className="text-accent underline">Set it up</button>.
         </div>
       )}
 
       {activeChar && activeChar.wclZone && !dpsSpecs.length && !showSettings && (
         <div className="panel p-4 text-sm text-gray-400">
-          No DPS spec is tracked for this character yet - only DPS specs can be analysed.{" "}
+          No DPS spec on this character yet - coaching only works on DPS for now.{" "}
           <button onClick={() => setShowSettings(true)} className="text-accent underline">Pick specs</button>.
         </div>
       )}
@@ -226,7 +226,7 @@ export function ImprovementTab({ characters }: { characters: Character[] }) {
           <RaidOverview characterId={activeChar.id} specId={activeSpecId} onOpenBoss={(encounterID) => loadRaidBoss(encounterID)} />
           <BossRotations classId={activeChar.classId} specId={activeSpecId} />
           <details className="panel p-4">
-            <summary className="cursor-pointer text-sm font-bold">Paste a report instead <small className="text-gray-500 font-normal">- for wipes, which rankings can't show</small></summary>
+            <summary className="cursor-pointer text-sm font-bold">Got a wipe? Paste the log <small className="text-gray-500 font-normal">- rankings only ever show kills</small></summary>
             <div className="pt-3">
               <RaidLogReport characterId={activeChar.id} specId={activeSpecId} />
             </div>
@@ -236,8 +236,8 @@ export function ImprovementTab({ characters }: { characters: Character[] }) {
 
       {mode === "mplus" && mplusReport && (
         <div>
-          {mplusLoading && <div className="panel p-6 text-sm text-gray-500">Building report…</div>}
-          {mplusError && <div className="panel p-6 text-sm text-rose-300">Report failed: {mplusError}</div>}
+          {mplusLoading && <div className="panel p-6 text-sm text-gray-500">Crunching the numbers…</div>}
+          {mplusError && <div className="panel p-6 text-sm text-rose-300">Couldn't build that: {mplusError}</div>}
           {mplusView && !mplusLoading && (
             <ReportView
               view={mplusView}
@@ -261,8 +261,8 @@ export function ImprovementTab({ characters }: { characters: Character[] }) {
 
       {mode === "raid" && raidReport && (
         <div>
-          {raidLoading && <div className="panel p-6 text-sm text-gray-500">Building raid report…</div>}
-          {raidError && <div className="panel p-6 text-sm text-rose-300">Report failed: {raidError}</div>}
+          {raidLoading && <div className="panel p-6 text-sm text-gray-500">Crunching the raid numbers…</div>}
+          {raidError && <div className="panel p-6 text-sm text-rose-300">Couldn't build that: {raidError}</div>}
           {raidView && !raidLoading && (
             <ReportView
               view={raidView}

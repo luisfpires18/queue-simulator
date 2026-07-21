@@ -25,10 +25,19 @@ model User {
   currentCharacterId String?
   currentSpecId      String?
 
-  characters Character[]
-  groups     Group[]
-  applications Application[]
+  characters       Character[]
+  groups           Group[]
+  applications     Application[]
   soloQueueEntries SoloQueueEntry[]
+
+  // Persistent recruitment — deliberately separate relations from `groups` /
+  // `applications` above, which stay the live one-key board.
+  mplusRecruitmentPosts   MPlusRecruitmentPost[]
+  guilds                  Guild[]
+  raiderProfiles          RaiderProfile[]
+  recruitmentApplications RecruitmentApplication[]
+  blocksMade              UserBlock[]
+  reportsMade             Report[]
 
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
@@ -60,21 +69,21 @@ model NotificationPreference {
 }
 
 model Character {
-  id      String @id @default(cuid())
-  userId  String
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name      String
-  realm     String
-  realmSlug String
-  region    String  @default("eu")
-  classId   String
-  specId    String? // active spec (fetched for main / on demand)
-  level     Int     @default(80)
-  ilvl      Int?
-  rating    Float? // M+ rating (decimal — matches WCL/Raider.IO precision)
-  faction   String  @default("Alliance")
-  isMain    Boolean @default(false) // the ONE real main — unique per user, a star among the "main" bucket
+  name            String
+  realm           String
+  realmSlug       String
+  region          String    @default("eu")
+  classId         String
+  specId          String? // active spec (fetched for main / on demand)
+  level           Int       @default(80)
+  ilvl            Int?
+  rating          Float? // M+ rating (decimal — matches WCL/Raider.IO precision)
+  faction         String    @default("Alliance")
+  isMain          Boolean   @default(false) // the ONE real main — unique per user, a star among the "main" bucket
   ratingUpdatedAt DateTime? // last successful Blizzard mythic-keystone-profile fetch
 
   // Roster board: which of the 3 draggable sections this character sits in,
@@ -92,12 +101,19 @@ model Character {
   // no parse/percentile, just kill/no-kill + difficulty (see src/game/raidSeason.ts).
   raidKills String @default("[]")
 
-  groupMembers GroupMember[]
-  specTracks   CharacterSpecTrack[]
-  runMembers   RunMember[]
-  applications Application[]
+  groupMembers     GroupMember[]
+  specTracks       CharacterSpecTrack[]
+  runMembers       RunMember[]
+  applications     Application[]
   soloQueueEntries SoloQueueEntry[]
-  createdAt    DateTime             @default(now())
+
+  // Persistent recruitment (see the MPlusRecruitmentPost / RaiderProfile block
+  // at the bottom of this file) — separate from the live one-key Group flow.
+  recruitmentEntries      MPlusRecruitmentCharacter[]
+  raiderProfiles          RaiderProfile[]
+  recruitmentApplications RecruitmentApplication[]
+
+  createdAt DateTime @default(now())
 
   @@unique([userId, realm, name])
   @@index([userId, bucket])
@@ -170,10 +186,10 @@ model Group {
   // just shown as a meets/doesn't-meet badge to the owner, see
   // src/game/achievements.ts) ----
   requirementType String? // "rating" | "resilient" | "custom", null = none
-  reqRating       Int?    // rating mode: minimum score
-  reqLevel        Int?    // resilient/custom: baseline level N (e.g. 21)
-  reqExtraCount   Int?    // custom only: K additional dungeons required
-  reqExtraLevel   Int?    // custom only: M, the higher level for those K dungeons
+  reqRating       Int? // rating mode: minimum score
+  reqLevel        Int? // resilient/custom: baseline level N (e.g. 21)
+  reqExtraCount   Int? // custom only: K additional dungeons required
+  reqExtraLevel   Int? // custom only: M, the higher level for those K dungeons
 
   // open slots: JSON [{ role, prefs: [specId] }] — one entry per open slot,
   // each with its own ordered acceptable specs (independent, allows combos).
@@ -200,7 +216,7 @@ model Group {
 // or declines; the applicant is pushed a direct notification either way (see
 // notifyUser in src/server/notifications/dispatch.ts).
 model Application {
-  id     String @id @default(cuid())
+  id      String @id @default(cuid())
   groupId String
   group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
@@ -317,9 +333,9 @@ model Run {
 }
 
 model RunMember {
-  id     String @id @default(cuid())
-  runId  String
-  run    Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id    String @id @default(cuid())
+  runId String
+  run   Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   // Set when this leaderboard member matches one of our own tracked
   // Characters (by blizzardCharacterId, falling back to name+realm+region);
@@ -336,4 +352,490 @@ model RunMember {
   role                String? // derived from specId, denormalized like CharacterSpecTrack.role
 
   @@unique([runId, blizzardCharacterId])
+}
+
+// ===========================================================================
+// PERSISTENT RECRUITMENT
+//
+// Everything below is the "find people to play with every week" system, and is
+// deliberately a separate island from Group/Application/SoloQueueEntry above —
+// those model ONE live key that forms, fills and dies. A recruitment post
+// outlives any single run: it has a status the owner drives (open/paused/
+// closed/filled) and an expiry it must be refreshed against.
+//
+// Same house conventions as the rest of the file: no Prisma enums (SQLite has
+// none, so enum-likes are Strings validated app-side with zod), and repeated
+// structured values live in JSON String columns parsed in
+// src/data/recruitmentMappers.ts.
+//
+// One JSON shape recurs on almost every model below:
+//   availability — WeeklySlot[] = { day: 0-6 (0=Sun), startMin, endMin }
+// with minutes-since-midnight local to the row's own `timeZone`. Minutes
+// rather than "19:30" strings so overlap is integer math; see
+// src/game/availability.ts, which is where the pure (DB-free, unit-tested)
+// overlap and timezone logic lives.
+// ===========================================================================
+
+// One persistent Mythic+ recruitment listing. Both sides of the market live
+// here on a `postType` discriminator, the same way Group.kind carries mplus
+// vs raid: browse, filters, status, expiry and (in a later phase)
+// applications/proposals are identical for a player advertising themselves and
+// a team advertising openings. The parts that genuinely differ are already in
+// the two child tables — MPlusRecruitmentCharacter (who is on the post) and
+// MPlusRecruitmentPosition (what the post is looking for).
+model MPlusRecruitmentPost {
+  id          String @id @default(cuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  // "player_lft"  — a player looking for a team
+  // "team_lfp"    — an established team looking for players
+  // "group_lfm"   — a small group wanting one or two more
+  // "new_team"    — building a team from scratch
+  postType String
+
+  title       String
+  description String?
+
+  // Only meaningful for the three team-shaped postTypes; null on player_lft.
+  teamName String?
+
+  region    String  @default("eu")
+  // Game region above (eu/us/kr/...), which matching needs. `country` is the
+  // separate social signal - ISO 3166-1 alpha-2, same convention and same
+  // picker as User.country on the profile. Optional; null = not shown.
+  country   String?
+  languages String  @default("[]") // JSON string[] of ISO 639-1 codes
+  timeZone  String? // IANA, e.g. "Europe/Lisbon"
+
+  // JSON WeeklySlot[] — when this player/team actually plays.
+  availability String @default("[]")
+
+  // "push" | "timing" | "vault" | "learning" | "title" | "competitive"
+  goal String
+
+  // Where they run now vs where they're trying to get to. Both ends optional
+  // so "+18 and up, no ceiling" is expressible.
+  currentKeyMin Int?
+  currentKeyMax Int?
+  targetKeyMin  Int?
+  targetKeyMax  Int?
+
+  voiceRequired Boolean @default(false)
+  voicePlatform String? // "discord" | "teamspeak" | "other", free-ish
+
+  teamMaturity String? // "new" | "established" — null on player_lft
+  atmosphere   String? // "chill" | "focused" | "competitive"
+
+  // Per-section privacy, mirroring User.showBattletag's opt-in style. Logs are
+  // off by default on purpose: parse percentile must never be the front door
+  // to a recruitment listing.
+  showLogs    Boolean @default(false)
+  showProfile Boolean @default(true)
+
+  status String @default("open") // "open" | "paused" | "closed" | "filled"
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  // Distinct from updatedAt: only an explicit "still recruiting" refresh moves
+  // this, so editing a typo doesn't relaunch a stale post to the top.
+  refreshedAt DateTime @default(now())
+  expiresAt   DateTime // createdAt/refreshedAt + 14 days, see src/game/expiry.ts
+
+  characters MPlusRecruitmentCharacter[]
+  positions  MPlusRecruitmentPosition[]
+
+  @@index([status, postType, region])
+  @@index([ownerUserId, status])
+  @@index([expiresAt])
+}
+
+// A character attached to a post. On player_lft this is the advertiser's own
+// character (with their alternate specs and the roles they'd flex to); on the
+// team postTypes it is one current roster member. Same table because a roster
+// member and a solo advertiser carry exactly the same facts.
+model MPlusRecruitmentCharacter {
+  id     String               @id @default(cuid())
+  postId String
+  post   MPlusRecruitmentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // Roster members are real tracked Characters, so a team's listed comp stays
+  // in sync with rating/ilvl/spec data we already sync from Battle.net.
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  primarySpecId    String
+  alternateSpecIds String @default("[]") // JSON string[] of specIds
+
+  preferredRole String // TANK | HEALER | DPS
+  // JSON string[] of roles — "roles they are willing to play", which is how an
+  // off-spec tank surfaces as roster flexibility rather than being invisible.
+  willingRoles  String @default("[]")
+
+  // Main-character context: true when this is the account's real main, so a
+  // post made on an alt can still say "my main is a 3.1k tank".
+  isMain          Boolean @default(false)
+  isCurrentMember Boolean @default(false)
+
+  // "leader" | "officer" | "member" | "trial" | "substitute" — null on
+  // player_lft, where there is no team to hold rank in.
+  teamRole String?
+
+  @@unique([postId, characterId])
+  @@index([characterId])
+}
+
+// One opening a team is recruiting for. Preferred vs accepted specs are kept
+// apart on purpose: a team can say "ideally Unholy DK, but any melee with a
+// battle res works" without either collapsing into a single hard filter.
+model MPlusRecruitmentPosition {
+  id     String               @id @default(cuid())
+  postId String
+  post   MPlusRecruitmentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  role             String // TANK | HEALER | DPS
+  preferredSpecIds String @default("[]") // JSON string[]
+  acceptedSpecIds  String @default("[]") // JSON string[] — empty = any spec in the role
+
+  priority    Int     @default(0) // higher sorts first; 0 = normal
+  isPermanent Boolean @default(true) // false = substitute/rotating seat
+  isFlexible  Boolean @default(false) // role itself is negotiable
+  isFilled    Boolean @default(false)
+
+  @@index([postId, isFilled])
+}
+
+// A guild. Intentionally thin — nearly everything a raider filters on (days,
+// difficulty, progression, openings) belongs to a specific RaidTeam, since one
+// guild routinely runs a Mythic roster and a casual Heroic roster with totally
+// different requirements.
+model Guild {
+  id          String @id @default(cuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  name      String
+  region    String  @default("eu")
+  country   String? // ISO 3166-1 alpha-2, see User.country - social signal, not the game region
+  realm     String?
+  realmSlug String?
+  faction   String? // "Alliance" | "Horde" | null where it no longer matters
+
+  description String?
+  culture     String? // the "what we're actually like" blurb, kept apart from description
+  size        Int?
+
+  languages String @default("[]") // JSON string[]; first entry = primary
+
+  discordUrl String?
+  websiteUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  raidTeams RaidTeam[]
+
+  @@unique([region, realmSlug, name])
+  @@index([ownerUserId])
+}
+
+// One raid roster inside a guild. This — not Guild — is what actually
+// recruits, expires and gets browsed.
+model RaidTeam {
+  id      String @id @default(cuid())
+  guildId String
+  guild   Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  name       String
+  difficulty String // "normal" | "heroic" | "mythic"
+
+  // Progression is stored twice on purpose: the free-text form is what guilds
+  // want to write ("6/8 M, 2 weeks on Fyrakk"), the structured pair is what
+  // progressionDistance() in src/game/guildMatch.ts can actually compare.
+  currentProgression  String?
+  currentRaidId       String? // see RAID_BY_ID in src/game/raidSeason.ts
+  currentBossesKilled Int?
+  previousProgression String?
+
+  // JSON WeeklySlot[] — the raid nights themselves.
+  availability String  @default("[]")
+  timeZone     String?
+
+  voicePlatform         String?
+  attendanceRequirement Int? // percent, e.g. 85
+  trialDuration         String? // "2 weeks", free text — varies far too much to enumerate
+  benchPolicy           String?
+  lootPolicy            String?
+  expectations          String?
+  requiredAddons        String  @default("[]") // JSON string[]
+
+  status String @default("open") // "open" | "paused" | "closed"
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  refreshedAt DateTime @default(now())
+  expiresAt   DateTime // refreshedAt + 30 days — longer than M+ since guild rosters move slower
+
+  positions RaidRecruitmentPosition[]
+
+  @@index([status, difficulty])
+  @@index([guildId])
+  @@index([expiresAt])
+}
+
+// An opening on a raid team. Same preferred/accepted split as
+// MPlusRecruitmentPosition, plus what KIND of seat is on offer — a trial and a
+// permanent core spot are very different asks and must be filterable apart.
+model RaidRecruitmentPosition {
+  id         String   @id @default(cuid())
+  raidTeamId String
+  raidTeam   RaidTeam @relation(fields: [raidTeamId], references: [id], onDelete: Cascade)
+
+  role             String // TANK | HEALER | DPS
+  preferredSpecIds String @default("[]") // JSON string[]
+  acceptedSpecIds  String @default("[]") // JSON string[] — empty = any spec in the role
+
+  // "core" | "trial" | "substitute" | "bench" | "prog_replacement" | "farm" | "one_night"
+  recruitmentType String
+
+  // 1 = high priority, 0 = normal, -1 = closed-but-listed (guilds want to show
+  // "not currently recruiting healers" rather than silently omitting the role).
+  priority Int     @default(0)
+  isFilled Boolean @default(false)
+
+  @@index([raidTeamId, isFilled])
+}
+
+// The raider side of the guild market. One row per character an account is
+// shopping around, so a player can advertise a Mythic-ready main and a Heroic
+// alt with different availability.
+model RaiderProfile {
+  id          String @id @default(cuid())
+  ownerUserId String
+  owner       User   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  primarySpecId    String
+  alternateSpecIds String @default("[]") // JSON string[]
+  preferredRole    String // TANK | HEALER | DPS
+  offRoles         String @default("[]") // JSON string[] — roles they can cover when asked
+
+  title        String?
+  introduction String?
+
+  region       String  @default("eu")
+  country      String? // ISO 3166-1 alpha-2, see User.country — social signal, not the game region
+  languages    String  @default("[]") // JSON string[]
+  timeZone     String?
+  // JSON WeeklySlot[] — nights they can raid.
+  availability String  @default("[]")
+
+  preferredDifficulty String // "normal" | "heroic" | "mythic"
+
+  currentProgression  String?
+  previousProgression String?
+  // JSON BossExperience[] — per-boss detail (see src/game/recruitmentTypes.ts):
+  // { raidId, bossId, difficulty, state, phaseReached?, kills?, lastPullAt? }.
+  // Richer than Character.raidKills (which is kill/no-kill only) because
+  // "reached P3 on Mythic" is exactly the signal a progression guild wants;
+  // seeded FROM raidKills on profile creation, then hand-editable.
+  bossExperience      String  @default("[]")
+
+  attendanceExpectation Int? // percent the raider can commit to
+  voiceAvailable        Boolean @default(true)
+  transferWilling       Boolean @default(false)
+  factionFlexible       Boolean @default(false)
+
+  atmosphere       String? // "chill" | "focused" | "competitive"
+  competitiveLevel String?
+  trialAvailable   Boolean @default(true)
+
+  showLogs    Boolean @default(false)
+  showProfile Boolean @default(true)
+
+  status String @default("open") // "open" | "paused" | "closed" | "filled"
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  refreshedAt DateTime @default(now())
+  expiresAt   DateTime // refreshedAt + 30 days, matching RaidTeam
+
+  @@unique([ownerUserId, characterId])
+  @@index([status, region, preferredDifficulty])
+  @@index([expiresAt])
+}
+
+// ===========================================================================
+// RECRUITMENT APPLICATIONS AND MODERATION
+//
+// The acting half of the recruitment system: applying to a post, the
+// recruiter's review workflow, and the blocking/reporting that has to exist
+// alongside it (applications are what create a contact surface between two
+// strangers, so the means to shut that down ships with them, not after).
+//
+// Deliberately separate from the `Application` model far above, which belongs
+// to the live one-key Group board and has a three-state lifecycle. A
+// recruitment application has a much longer one (shortlist, trial, interview)
+// and outlives any single run.
+// ===========================================================================
+
+// One application to either kind of recruitment listing.
+//
+// A single table with a `recruitmentType` discriminator, the same shape as
+// Group.kind and MPlusRecruitmentPost.postType: an M+ and a guild application
+// differ only in what they point AT. Status flow, notes, ownership, privacy
+// and expiry are identical, so splitting them would double every query and
+// every transition rule for no gain.
+model RecruitmentApplication {
+  id String @id @default(cuid())
+
+  recruitmentType String // "mplus" | "guild"
+
+  // MPlusRecruitmentPost.id when recruitmentType="mplus", RaidTeam.id when
+  // "guild". NOT a Prisma relation - it addresses one of two tables, the same
+  // loose-id convention SoloQueueEntry.activeApplicationId already uses.
+  //
+  // The tradeoff is real and handled explicitly: there is no FK cascade, so
+  // deleteMPlusPost/deleteRaidTeam delete their applications by hand. Do not
+  // "fix" this by adding a relation without collapsing the two target types.
+  targetId String
+
+  // The specific opening applied for (MPlusRecruitmentPosition.id or
+  // RaidRecruitmentPosition.id). Null = general interest, which is allowed:
+  // a guild with no matching opening still wants to hear from a good raider.
+  positionId String?
+
+  applicantUserId String
+  applicant       User   @relation(fields: [applicantUserId], references: [id], onDelete: Cascade)
+
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  specId           String
+  alternateSpecIds String @default("[]") // JSON string[]
+  role             String // TANK | HEALER | DPS
+
+  // JSON WeeklySlot[] — the applicant's availability FOR THIS APPLICATION,
+  // which can differ from their own post (people flex for a team they want).
+  availability String @default("[]")
+
+  note String? // free text from the applicant, shown to the recruiter
+
+  // Private to the recruiting side and never mapped into an applicant-facing
+  // DTO — stripped in the mapper rather than at each call site, so no route
+  // can leak it by forgetting. See listMyApplications in
+  // src/data/recruitmentApplications.ts.
+  recruiterNote String?
+
+  // See src/game/applicationStatus.ts for the state machine and which side is
+  // allowed to make each transition.
+  //   both:   pending | accepted | declined | withdrawn | expired
+  //   mplus:  shortlisted | trial_offered | trial_accepted
+  //   guild:  under_review | interview_requested | trial_offered | trial_active
+  status String @default("pending")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([recruitmentType, targetId, status])
+  @@index([applicantUserId, status])
+  @@index([characterId])
+}
+
+// A one-way block. Enforced in BOTH directions at apply time (see
+// isBlockedEither in src/data/moderation.ts): if either party has blocked the
+// other, no application can pass between them.
+model UserBlock {
+  id String @id @default(cuid())
+
+  blockerUserId String
+  blocker       User   @relation(fields: [blockerUserId], references: [id], onDelete: Cascade)
+
+  // Loose id rather than a second relation to User: Prisma would need a named
+  // back-relation on User for this side, and nothing ever reads "who blocked
+  // me" as a list (that would itself be a privacy leak).
+  blockedUserId String
+
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([blockerUserId, blockedUserId])
+  @@index([blockedUserId])
+}
+
+// A user-submitted report. Phase 2 writes and indexes these; there is no
+// admin UI yet, so they are read by querying the table directly. Recorded
+// honestly as a limitation rather than shipping a moderation surface that
+// does not exist.
+model Report {
+  id String @id @default(cuid())
+
+  reporterUserId String
+  reporter       User   @relation(fields: [reporterUserId], references: [id], onDelete: Cascade)
+
+  targetType String // "user" | "mplus_post" | "guild" | "raid_team" | "application"
+  targetId   String
+
+  // The anti-boosting categories the product explicitly prohibits, plus the
+  // general-purpose ones. See src/game/moderation.ts for the labels.
+  category String // "boosting" | "gold_selling" | "spam" | "harassment" | "other"
+  detail   String?
+
+  status     String    @default("open") // "open" | "reviewed" | "actioned" | "dismissed"
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  // One report per user per target - re-reporting updates rather than piling
+  // up, so a single angry user cannot inflate a target's report count.
+  @@unique([reporterUserId, targetType, targetId])
+  @@index([status, targetType])
+}
+
+// ===========================================================================
+// FEATURE FLAGS
+//
+// Lets an unfinished area (Recruitment, Guilds, Analyses) ship behind a gate
+// the owner can open from the admin dashboard instead of a deploy.
+//
+// Note what is deliberately NOT here: who is an ADMIN. That stays in the
+// ADMIN_BNET_IDS environment variable (see src/game/adminAllowlist.ts), so
+// there is no path from "can edit these rows" to "can make myself an admin".
+// These tables only ever widen access to a feature, never to the dashboard.
+// ===========================================================================
+
+// One row per gated feature. Absent row = the registry default in
+// src/game/features.ts, which is "admin" for everything currently gated - so a
+// missing or unreadable row fails CLOSED, never open.
+model FeatureFlag {
+  // The feature key itself ("recruitment", "guilds", "analyses") rather than a
+  // cuid: there is exactly one row per feature and the key is already unique
+  // and stable, which makes findUnique({ where: { id: key } }) the natural read.
+  id String @id
+
+  visibility String  @default("admin") // "admin" | "allowlist" | "public"
+  note       String? // why it is gated, for future-you
+
+  updatedAt DateTime @updatedAt
+
+  grants FeatureAccess[]
+}
+
+// An individual grant. Only consulted when the flag is at "allowlist".
+model FeatureAccess {
+  id        String      @id @default(cuid())
+  featureId String
+  feature   FeatureFlag @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  // Granted by Battle.net id, NOT userId, on purpose: it lets you invite
+  // someone who has never signed in, so no User row exists yet - which is
+  // exactly the case when handing an alpha to a friend.
+  bnetId String
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([featureId, bnetId])
+  @@index([bnetId])
 }

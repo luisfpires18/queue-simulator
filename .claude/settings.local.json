@@ -6,7 +6,19 @@
       "PowerShell(npx tsc --noEmit)",
       "PowerShell(npm test 2>&1)",
       "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped orphan dev server\" } else { \"port 3200 free\" })",
-      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped\" } else { \"already free\" })"
+      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped\" } else { \"already free\" })",
+      "PowerShell(npx prisma generate)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue | Select-Object Id, StartTime, @{n='CPU';e={$_.CPU}} | Format-Table -AutoSize)",
+      "PowerShell(npx tsx --tsconfig tsconfig.json smoke.tmp.ts 2>&1)",
+      "PowerShell(\\(Get-Content \"d:\\\\Workspace\\\\queue_simulator\\\\smoke.tmp.ts\"\\) -replace 'spec: \"', 'specId: \"' | Set-Content -Encoding utf8 \"d:\\\\Workspace\\\\queue_simulator\\\\smoke.tmp.ts\"; npx tsx --tsconfig tsconfig.json smoke.tmp.ts 2>&1 | Select-String -Pattern \"spec|FAIL\")",
+      "PowerShell(npx vitest run src/game/analyze.test.ts 2>&1)",
+      "PowerShell(npx vitest run --config vitest.integration.config.ts test/integration/notifications.test.ts 2>&1)",
+      "PowerShell(npx vitest run src/game/guildMatch.test.ts 2>&1)",
+      "PowerShell(npx vitest run --config vitest.integration.config.ts test/integration/sweep.test.ts 2>&1)",
+      "PowerShell(npx vitest run --config vitest.integration.config.ts test/integration/adminReports.test.ts 2>&1)",
+      "PowerShell(npx vitest run src/game/adminAllowlist.test.ts 2>&1)",
+      "PowerShell(npm run sweep:recruitment 2>&1)",
+      "PowerShell($env:ADMIN_BNET_IDS = \"dev-fake-1\"; npm run dev)"
     ]
   }
 }

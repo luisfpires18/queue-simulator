@@ -7,6 +7,7 @@ import { WowIcon } from "@/components/WowIcon";
 import { SpecIcon } from "@/components/SpecIcon";
 import { RoleIcon } from "@/components/RoleIcon";
 import { MISC_ICON, SPELL_ICON } from "@/game/icons";
+import { BUFF_BY_ID } from "@/game/buffs";
 import { RAID_BY_ID } from "@/game/raidSeason";
 import { CLASSES, type Role } from "@/game/classes";
 import { fmtK, pctColor } from "@/game/wclFormat";
@@ -59,22 +60,63 @@ function MockOpenSlot({ role, specId, name }: { role: Role; specId?: string; nam
 
 export function KeyBoardMockup() {
   return (
-    <div className="space-y-3 w-full max-w-xs">
+    <div className="space-y-3 w-full max-w-sm">
       <div className="flex items-center gap-2">
         <WowIcon slug={MISC_ICON.keystone} size={24} cdnSize="medium" rounded="sm" />
         <span className="text-accent font-black text-lg tabular-nums">+20</span>
         <span className="font-bold text-sm">Pit of Saron</span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      {/* five slots, one row */}
+      <div className="grid grid-cols-5 gap-1 justify-items-center">
         <MockFilledSlot specId="monk:brewmaster" name="Brewmaster Monk" />
         <MockFilledSlot specId="shaman:restoration" name="Restoration Shaman" />
         <MockFilledSlot specId="druid:feral" name="Feral Druid" />
         <MockFilledSlot specId="warrior:arms" name="Arms Warrior" />
         <MockOpenSlot role="DPS" specId="rogue:outlaw" name="Outlaw Rogue" />
       </div>
+      {/* the whole group's coverage, not just Lust + Res */}
       <div className="flex flex-wrap gap-1.5">
         <Chip label="Bloodlust" status="have" icon={SPELL_ICON.lust} />
         <Chip label="Battle Res" status="have" icon={SPELL_ICON.combatRes} />
+        <Chip label={BUFF_BY_ID.mystictouch.short} status="have" icon={BUFF_BY_ID.mystictouch.icon} />
+        <Chip label={BUFF_BY_ID.battleshout.short} status="have" icon={BUFF_BY_ID.battleshout.icon} />
+        <Chip label={BUFF_BY_ID.motw.short} status="have" icon={BUFF_BY_ID.motw.icon} />
+        <Chip label={BUFF_BY_ID.skyfury.short} status="have" icon={BUFF_BY_ID.skyfury.icon} />
+        {/* Atrophic Poison comes from the still-open Rogue slot, so it's "want", not "have" */}
+        <Chip label={BUFF_BY_ID.atrophicpoison.short} status="want" icon={BUFF_BY_ID.atrophicpoison.icon} />
+      </div>
+    </div>
+  );
+}
+
+export function SoloQueueMockup() {
+  return (
+    <div className="space-y-3 w-full max-w-xs">
+      {/* your filters */}
+      <div className="flex flex-wrap gap-1.5">
+        <span className="chip border border-panelborder bg-panel2/60 text-gray-300">+18 to +20</span>
+        <span className="chip border border-panelborder bg-panel2/60 text-gray-300">
+          <RoleIcon role="DPS" size={12} rounded="sm" /> DPS
+        </span>
+        <span className="chip border border-panelborder bg-panel2/60 text-gray-300">4 dungeons</span>
+      </div>
+      {/* a proposed group you can take or pass on */}
+      <div className="panel bg-panel2/50 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <WowIcon slug={MISC_ICON.keystone} size={18} cdnSize="small" rounded="sm" />
+          <span className="text-accent font-bold text-sm tabular-nums">+19</span>
+          <span className="text-sm">Skyreach · needs a DPS</span>
+        </div>
+        <div className="flex gap-1">
+          <SpecIcon specId="paladin:protection" size={22} showRole={false} />
+          <SpecIcon specId="priest:holy" size={22} showRole={false} />
+          <SpecIcon specId="mage:frost" size={22} showRole={false} />
+          <SpecIcon specId="hunter:marksmanship" size={22} showRole={false} />
+        </div>
+        <div className="flex gap-2 pt-0.5">
+          <span className="chip bg-emerald-500/15 border border-emerald-500/40 text-emerald-200">Accept</span>
+          <span className="chip border border-panelborder text-gray-400">Pass</span>
+        </div>
       </div>
     </div>
   );

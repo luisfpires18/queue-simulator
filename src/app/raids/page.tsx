@@ -26,8 +26,8 @@ export default async function RaidsPage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-black">Raid Runs</h1>
-          <p className="text-gray-400 text-sm">Live raids listed by players.</p>
+          <h1 className="text-2xl font-black">Raids</h1>
+          <p className="text-gray-400 text-sm">Open raids, posted by players right now.</p>
         </div>
         {loggedIn && (
           <Link href="/list?kind=raid" className="btn-gold">List your Raid</Link>

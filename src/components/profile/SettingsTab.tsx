@@ -43,9 +43,9 @@ export function SettingsTab() {
           className="mt-0.5 accent-accent"
         />
         <span>
-          <span className="block text-sm font-bold text-gray-200">Show battletag on public profile</span>
+          <span className="block text-sm font-bold text-gray-200">Show my battletag on my profile</span>
           <span className="block text-xs text-gray-500 mt-0.5">
-            When off, your public profile (/u/…) shows your character name instead of your battletag.
+            Turn it off and your profile shows a character name instead of your battletag.
           </span>
         </span>
       </label>
@@ -58,7 +58,7 @@ export function SettingsTab() {
           value={settings.country}
           onChange={(country) => update({ ...settings, country })}
         />
-        <p className="text-[11px] text-gray-500 mt-1.5">Shown as a flag next to your name on your public profile.</p>
+        <p className="text-[11px] text-gray-500 mt-1.5">Shows as a little flag next to your name.</p>
       </div>
     </div>
   );

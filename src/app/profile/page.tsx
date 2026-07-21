@@ -18,7 +18,7 @@ export default async function ProfilePage() {
     return (
       <div className="max-w-xl mx-auto panel p-8 text-center space-y-4">
         <h1 className="text-2xl font-black">Your Profile</h1>
-        <p className="text-gray-400">Log in with Battle.net to sync your WoW characters.</p>
+        <p className="text-gray-400">Log in with Battle.net and we'll pull your characters in.</p>
         {bnetEnabled ? (
           <form action={async () => { "use server"; await signIn("battlenet", { redirectTo: "/profile" }); }}>
             <button className="btn bg-[#00aeff] text-black hover:brightness-110">Login with Battle.net</button>
@@ -52,7 +52,7 @@ export default async function ProfilePage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-black">{displayName}</h1>
-        <p className="text-gray-400 text-sm">Sync from Battle.net, arrange your roster, and track your parses.</p>
+        <p className="text-gray-400 text-sm">Pull your characters from Battle.net, sort your roster, and dig into your parses.</p>
       </div>
       <ProfileOverview
         battletag={s.battletag ?? null}

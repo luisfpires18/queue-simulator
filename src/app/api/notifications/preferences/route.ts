@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
+import { toggleableTypes } from "@/server/notifications/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,15 @@ export async function GET() {
   return NextResponse.json({
     enabled: pref?.enabled ?? false,
     settings: pref ? parseSettings(pref.settings) : {},
+    // The per-type toggles the UI should render, described by the registry
+    // rather than hardcoded in the tab - adding a notification type now
+    // surfaces its switch automatically. Sent from here (not imported by the
+    // client) so the registry stays server-side.
+    types: toggleableTypes().map((d) => ({
+      type: d.type,
+      label: d.label,
+      description: d.description,
+    })),
   });
 }
 

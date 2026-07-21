@@ -357,14 +357,14 @@ export function BoardClient({
               <div className="text-4xl mb-3">🗝️</div>
               {!anyOtherKeysExist ? (
                 <>
-                  <p className="text-gray-300 font-semibold">No keys listed yet.</p>
+                  <p className="text-gray-300 font-semibold">Board's empty right now.</p>
                   <p className="text-gray-500 text-sm mt-1">
-                    {canList ? "Be the first - hit “List your Key”." : "Log in with Battle.net to list your key."}
+                    {canList ? "Be the first up - hit “List your Key”." : "Log in with Battle.net to post one."}
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="text-gray-300 font-semibold">No keys match your filters.</p>
+                  <p className="text-gray-300 font-semibold">Nothing matches those filters.</p>
                   <button onClick={resetAll} className="text-accent text-sm mt-1 hover:underline">reset all</button>
                 </>
               )}

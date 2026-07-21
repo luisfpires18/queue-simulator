@@ -108,6 +108,108 @@ export function binDamageEvents(eventPages, fight, binMs = 5000) {
   return { binMs, points, totalDamage };
 }
 
+/** Healing table -> per-ability healing (composite entries fold pets/procs in). */
+export function parseHealingTable(table) {
+  const d = dataOf(table, 'healing');
+  const entries = Array.isArray(d?.entries) ? d.entries : [];
+  const abilities = entries
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => ({
+      name: e.name ?? '(unknown)',
+      guid: e.guid ?? null,
+      total: numOr0(e.total),
+      // WCL healing entries split effective vs overheal; `total` is effective.
+      overheal: numOr0(e.overheal),
+      hits: numOr0(e.hitCount),
+    }))
+    .sort((a, b) => b.total - a.total);
+  return {
+    totalTimeMs: numOrNull(d?.totalTime),
+    abilities,
+    totalHealing: abilities.reduce((acc, a) => acc + a.total, 0),
+  };
+}
+
+/**
+ * DamageTaken table (dataType: DamageTaken, sourceID = the player) -> per-ability
+ * damage the player SUFFERED. WCL exposes no first-class "avoidable" flag over
+ * GraphQL, so avoidable damage is a best-effort classification done in the
+ * analysis layer against a per-source ability list — here we just surface the
+ * full per-ability breakdown and the total.
+ */
+export function parseDamageTakenTable(table) {
+  const d = dataOf(table, 'damageTaken');
+  const entries = Array.isArray(d?.entries) ? d.entries : [];
+  const abilities = entries
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => ({
+      name: e.name ?? '(unknown)',
+      guid: e.guid ?? null,
+      total: numOr0(e.total),
+      hits: numOr0(e.hitCount),
+    }))
+    .sort((a, b) => b.total - a.total);
+  return {
+    totalTimeMs: numOrNull(d?.totalTime),
+    abilities,
+    totalDamage: abilities.reduce((acc, a) => acc + a.total, 0),
+  };
+}
+
+/**
+ * Interrupts table (dataType: Interrupts, sourceID = the player) -> SUCCESSFUL
+ * interrupts. Each entry is an interrupted ability with `total` = how many times
+ * this player interrupted it; summing gives the successful-interrupt count. WCL
+ * does not report attempted/wasted casts here, so this is landed interrupts only.
+ */
+export function parseInterruptsTable(table) {
+  const d = dataOf(table, 'interrupts');
+  const entries = Array.isArray(d?.entries) ? d.entries : [];
+  const abilities = entries
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => ({
+      name: e.name ?? '(unknown)',
+      guid: e.guid ?? null,
+      // WCL's Interrupts table carries the count as `total`; some payloads use
+      // `totalUses`/`uses`. Take whichever is present so the count isn't zeroed.
+      count: numOr0(e.total) || numOr0(e.totalUses) || numOr0(e.uses),
+    }))
+    .sort((a, b) => b.count - a.count);
+  return {
+    total: abilities.reduce((acc, a) => acc + a.count, 0),
+    abilities,
+  };
+}
+
+/**
+ * Dispels table (dataType: Dispels, sourceID = the player) -> dispels + purges.
+ * Each entry is a removed aura with `total` = times removed. WCL folds both a
+ * friendly dispel (debuff off an ally) and an offensive purge (buff off an enemy)
+ * into this dataType; when an entry carries a `type` we split on it, else the
+ * whole count is reported as `dispels` (purges left 0) so the number is never
+ * silently inflated.
+ */
+export function parseDispelsTable(table) {
+  const d = dataOf(table, 'dispels');
+  const entries = Array.isArray(d?.entries) ? d.entries : [];
+  let dispels = 0;
+  let purges = 0;
+  const abilities = entries
+    .filter((e) => e && typeof e === 'object')
+    .map((e) => {
+      const count = numOr0(e.total) || numOr0(e.totalUses) || numOr0(e.uses);
+      // WCL marks an offensive dispel (purge) on the removed aura; when present
+      // `e.type === 'purge'` or a hostile target flag distinguishes it. Absent →
+      // treat as a friendly dispel.
+      const isPurge = e.type === 'purge' || e.purge === true;
+      if (isPurge) purges += count;
+      else dispels += count;
+      return { name: e.name ?? '(unknown)', guid: e.guid ?? null, count, isPurge };
+    })
+    .sort((a, b) => b.count - a.count);
+  return { dispels, purges, total: dispels + purges, abilities };
+}
+
 /** Deaths table -> death timestamps (report-relative ms) + killing blows. */
 export function parseDeathsTable(table) {
   const d = dataOf(table, 'deaths');
@@ -140,6 +242,51 @@ export function parseFightDeaths(table) {
       timestamp: e.timestamp,
       fight: numOrNull(e.fight),
     }));
+}
+
+/**
+ * Interrupt events stream -> LANDED-interrupt count + per-interrupted-ability
+ * tally. Each type:"interrupt" event is one successful interrupt; `sourceID` is
+ * the interrupter, `abilityGameID` the spell that was interrupted. `sourceId`
+ * filters to one interrupter client-side (server-side sourceID filtering on this
+ * dataType returned nothing on real M+ payloads).
+ */
+export function parseInterruptEvents(eventPages, sourceId = null) {
+  const byAbility = new Map();
+  let total = 0;
+  for (const page of eventPages) {
+    const data = Array.isArray(page?.data) ? page.data : [];
+    for (const ev of data) {
+      if (ev?.type !== 'interrupt') continue;
+      if (sourceId != null && ev.sourceID !== sourceId) continue;
+      total += 1;
+      const key = ev.abilityGameID ?? 0;
+      byAbility.set(key, (byAbility.get(key) ?? 0) + 1);
+    }
+  }
+  return {
+    total,
+    abilities: [...byAbility.entries()].map(([guid, count]) => ({ guid, count })).sort((a, b) => b.count - a.count),
+  };
+}
+
+/** DamageTaken events stream -> [{timestamp, amount, abilityGameID}] (type "damage"). */
+export function parseDamageTakenEvents(eventPages) {
+  const events = [];
+  for (const page of eventPages) {
+    const data = Array.isArray(page?.data) ? page.data : [];
+    for (const ev of data) {
+      if (ev?.type === 'damage' && typeof ev.timestamp === 'number') {
+        events.push({
+          timestamp: ev.timestamp,
+          amount: numOr0(ev.amount),
+          abilityGameID: ev.abilityGameID ?? null,
+        });
+      }
+    }
+  }
+  events.sort((a, b) => a.timestamp - b.timestamp);
+  return events;
 }
 
 /** Cast events stream -> ordered cast timestamps (type "cast" only). */

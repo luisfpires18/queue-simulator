@@ -47,3 +47,13 @@ export const DISPELS: DispelDef[] = [
 export const DISPEL_BY_ID: Record<string, DispelDef> = Object.fromEntries(
   DISPELS.map((d) => [d.id, d])
 );
+
+// Every spec that can friendly-dispel SOMETHING (any of the rows above lists it
+// as a provider). Used to hide the dispel metric entirely for classes that have
+// no dispel at all (Death Knight, Demon Hunter, Warrior, Rogue) rather than
+// reporting a misleading "0".
+const DISPEL_CAPABLE_SPECS = new Set<string>(DISPELS.flatMap((d) => d.providerSpecs));
+
+export function canDispel(specId: string | null | undefined): boolean {
+  return specId != null && DISPEL_CAPABLE_SPECS.has(specId);
+}

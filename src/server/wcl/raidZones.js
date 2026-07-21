@@ -104,7 +104,15 @@ export async function fetchDungeonZones({ refresh = false } = {}) {
   const byName = new Map();
   for (const z of zones.sort((a, b) => b.id - a.id)) {
     if (!byName.has(z.name)) {
-      byName.set(z.name, { id: z.id, name: z.name, patch: currentPatchOf(z) });
+      byName.set(z.name, {
+        id: z.id,
+        name: z.name,
+        patch: currentPatchOf(z),
+        // Encounters = the season's dungeon pool; used to pick the CURRENT
+        // season's zone by matching against season.ts (WCL lists a not-yet-live
+        // next-season zone too, and "newest id" alone would wrongly pick it).
+        encounters: (z.encounters ?? []).map((e) => ({ id: e.id, name: e.name })),
+      });
     }
   }
   return [...byName.values()];

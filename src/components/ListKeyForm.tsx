@@ -88,7 +88,7 @@ export function ListKeyForm({
     useComboBuilder(editGroup, 4, setSlots);
 
   const {
-    buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage,
+    buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage, skipCoverage,
   } = useListingCoverage(ownerSpecId, slots, combos);
 
   const [submitting, setSubmitting] = useState(false);
@@ -365,6 +365,9 @@ export function ListKeyForm({
 
       {/* external defensives: single-target cooldowns, same have/want/missing shape */}
       <CoveragePanel title="External Defensives" coverage={externalDefensiveCoverage} />
+
+      {/* trash skips: Shroud / Gateway / Rescue */}
+      <CoveragePanel title="Skips" coverage={skipCoverage} />
 
       <div className="flex items-center gap-3">
         <Link href="/runs" className="btn-ghost">

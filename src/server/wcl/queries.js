@@ -218,6 +218,68 @@ query ReportTable($code: String!, $fightIDs: [Int!], $dataType: TableDataType!, 
 // Gear (with enchants + gems) at pull start, for every player. CombatantInfo is a
 // per-player snapshot event; we pick the one matching the actor's sourceID. This
 // is the only source of gear — the tables carry none. The gear check reads it.
+// Like REPORT_TABLE but time-windowed, so a table can be scoped to one boss
+// PULL inside a Mythic+ keystone fight (a M+ dungeon is a single WCL fight; its
+// individual bosses are dungeonPulls, distinguished only by a time range).
+export const REPORT_TABLE_WINDOW = `
+query ReportTableWindow($code: String!, $fightIDs: [Int!], $dataType: TableDataType!, $sourceID: Int!, $targetID: Int, $startTime: Float, $endTime: Float) {
+  reportData {
+    report(code: $code) {
+      table(fightIDs: $fightIDs, dataType: $dataType, sourceID: $sourceID, targetID: $targetID, startTime: $startTime, endTime: $endTime)
+    }
+  }
+}`;
+
+// Interrupt EVENTS for the whole fight (each type:"interrupt" event = one
+// SUCCESSFUL/landed interrupt). sourceID is intentionally OPTIONAL and left null
+// — filtering by sourceID server-side returned 0 on real M+ payloads, so we pull
+// every interrupt event and filter to our actor client-side (parseInterruptEvents).
+export const REPORT_INTERRUPT_EVENTS = `
+query ReportInterruptEvents($code: String!, $fightIDs: [Int!], $sourceID: Int, $startTime: Float, $endTime: Float) {
+  reportData {
+    report(code: $code) {
+      events(fightIDs: $fightIDs, dataType: Interrupts, sourceID: $sourceID, startTime: $startTime, endTime: $endTime) {
+        data
+        nextPageTimestamp
+      }
+    }
+  }
+}`;
+
+// One keystone fight + its per-boss pulls + the report's player actors. In a
+// Mythic+ report (which often holds SEVERAL dungeon runs) the encounterRankings
+// fightID is the ONE dungeon run; its `dungeonPulls` are that dungeon's bosses
+// (encounterID != 0) and trash (encounterID 0). This is the only correct source
+// of per-boss splits — the report's top-level fights list mixes every dungeon.
+export const REPORT_KEYSTONE_PULLS = `
+query ReportKeystonePulls($code: String!, $fightIDs: [Int!]) {
+  reportData {
+    report(code: $code) {
+      fights(fightIDs: $fightIDs) {
+        id
+        name
+        encounterID
+        keystoneLevel
+        keystoneTime
+        kill
+        startTime
+        endTime
+        dungeonPulls {
+          id name encounterID kill startTime endTime
+          # enemyNPCs lists each NPC type in the pull with its instance range.
+          # A boss / co-boss is a single instance (maximumInstanceID ~1); trash
+          # packs are many instances — that's how boss damage is isolated from
+          # adds without a per-NPC name table.
+          enemyNPCs { id gameID maximumInstanceID }
+        }
+      }
+      masterData(translate: true) {
+        actors(type: "Player") { id name subType server }
+      }
+    }
+  }
+}`;
+
 export const REPORT_COMBATANT_INFO = `
 query ReportCombatantInfo($code: String!, $fightIDs: [Int!]) {
   reportData {
@@ -327,6 +389,23 @@ query ReportDamageEvents($code: String!, $fightIDs: [Int!], $sourceID: Int!, $st
   reportData {
     report(code: $code) {
       events(fightIDs: $fightIDs, dataType: DamageDone, sourceID: $sourceID, startTime: $startTime, endTime: $endTime) {
+        data
+        nextPageTimestamp
+      }
+    }
+  }
+}`;
+
+// Damage the player TOOK, as an event stream. Keyed by targetID (the damaged
+// player) — the mirror of REPORT_DAMAGE_TAKEN_GRAPH's targetID, not sourceID
+// (which on a damage-taken view is the enemy dealing it). Timestamps let a
+// personal defensive's buff band be tested for overlapping incoming damage
+// ("did it actually mitigate"). Paged like the other event streams.
+export const REPORT_DAMAGE_TAKEN_EVENTS = `
+query ReportDamageTakenEvents($code: String!, $fightIDs: [Int!], $targetID: Int!, $startTime: Float, $endTime: Float) {
+  reportData {
+    report(code: $code) {
+      events(fightIDs: $fightIDs, dataType: DamageTaken, targetID: $targetID, startTime: $startTime, endTime: $endTime) {
         data
         nextPageTimestamp
       }

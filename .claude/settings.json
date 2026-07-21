@@ -9,7 +9,13 @@
       "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>/dev/null; echo ok)",
       "PowerShell(node \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Workspace-queue-simulator\\\\3d8b5dde-2789-44f9-9a22-c74f6919ab35\\\\scratchpad\\\\migrate-imports.js\")",
       "PowerShell(npm run build 2>&1)",
-      "PowerShell(npm run dev)"
+      "PowerShell(npm run dev)",
+      "PowerShell(npx vitest run src/game/availability.test.ts 2>&1)",
+      "PowerShell(npx vitest run src/game/recruitmentMatch.test.ts 2>&1)",
+      "PowerShell(npx vitest run src/game/recruitmentMatch.test.ts src/game/guildMatch.test.ts src/game/expiry.test.ts 2>&1)",
+      "PowerShell(Start-Process -FilePath \"npm\" -ArgumentList \"run\",\"dev\" -WorkingDirectory \"d:\\\\Workspace\\\\queue_simulator\" -WindowStyle Hidden)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Select-Object ProcessId, @{n='Cmd';e={$_.CommandLine.Substring\\(0,[Math]::Min\\(120,$_.CommandLine.Length\\)\\)}} | Format-List)",
+      "PowerShell(npx vitest run src/game/applicationStatus.test.ts 2>&1)"
     ],
     "additionalDirectories": [
       "d:\\Workspace\\queue_simulator\\src\\app\\player\\[region]\\[realmSlug]",

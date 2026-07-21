@@ -122,7 +122,23 @@ describe("completeness + rating tier", () => {
   });
 
   it("avg rating maps to the right tier", () => {
+    // "artifact" is the top tier in RATING_TIERS (src/game/season.ts). This
+    // previously asserted "legend", an id that does not exist there - the only
+    // "legend" in the codebase is an unused tier.legend colour token in
+    // tailwind.config.ts, so the assertion could never have passed.
     const a = analyzeGroup([M("mage:frost", 4100), M("druid:guardian", 4100)]);
-    expect(a.ratingTier.id).toBe("legend");
+    expect(a.ratingTier.id).toBe("artifact");
+  });
+
+  it("averages the party rating rather than taking the best", () => {
+    // 3000 and 1000 average to 2000, which is "epic" (>= 2080 is legendary,
+    // so this lands one tier below) - not the 3000 player's "artifact".
+    const a = analyzeGroup([M("mage:frost", 3000), M("druid:guardian", 1000)]);
+    expect(a.ratingTier.id).toBe("rare");
+  });
+
+  it("falls back to the lowest tier for an unrated group", () => {
+    const a = analyzeGroup([M("mage:frost", 0), M("druid:guardian", 0)]);
+    expect(a.ratingTier.id).toBe("uncommon");
   });
 });

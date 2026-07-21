@@ -19,6 +19,10 @@ import {
   REPORT_RESOURCE_EVENTS,
   REPORT_BUFF_SOURCE_EVENTS,
   REPORT_DAMAGE_EVENTS,
+  REPORT_DAMAGE_TAKEN_EVENTS,
+  REPORT_TABLE_WINDOW,
+  REPORT_KEYSTONE_PULLS,
+  REPORT_INTERRUPT_EVENTS,
   REPORT_COMBATANT_INFO,
 } from './queries.js';
 import { roleOf } from './specs.js';
@@ -37,6 +41,11 @@ import {
   parseFightDeaths,
   classifyBuffSources,
   binDamageEvents,
+  parseHealingTable,
+  parseDamageTakenTable,
+  parseDispelsTable,
+  parseDamageTakenEvents,
+  parseInterruptEvents,
 } from '../parse/tables.js';
 
 // WCL answers `specName: null` with an Internal server error — the argument
@@ -665,12 +674,20 @@ export async function fetchDamageSeries({ code, fightID, playerName, server = nu
   return series;
 }
 
-/** Page through an events(...) query via nextPageTimestamp. */
-async function paginateEvents(query, { code, fightID, sourceID, fight, noCache = false }) {
+/**
+ * Page through an events(...) query via nextPageTimestamp. Pass `sourceID` for
+ * the "did X" streams (Casts/Damage/Buffs/Resources) or `targetID` for the
+ * damage-TAKEN stream — whichever the query declares. Only the id actually
+ * supplied is sent, so this stays compatible with both query shapes.
+ */
+async function paginateEvents(query, { code, fightID, sourceID, targetID, fight, noCache = false }) {
   const pages = [];
   let startTime = fight.startTime;
   for (let i = 0; i < 20; i++) {
-    const resp = await gql(query, { code, fightIDs: [fightID], sourceID, startTime, endTime: fight.endTime }, { noCache });
+    const vars = { code, fightIDs: [fightID], startTime, endTime: fight.endTime };
+    if (sourceID != null) vars.sourceID = sourceID;
+    if (targetID != null) vars.targetID = targetID;
+    const resp = await gql(query, vars, { noCache });
     const pageData = resp?.reportData?.report?.events;
     if (!pageData) break;
     pages.push(pageData);
@@ -678,6 +695,240 @@ async function paginateEvents(query, { code, fightID, sourceID, fight, noCache =
     startTime = pageData.nextPageTimestamp;
   }
   return pages;
+}
+
+/**
+ * Full applicant combat detail for ONE keystone run, all on the PUBLIC client
+ * (no login, no ownership). Whole-run totals — damage, healing, damage taken,
+ * successful interrupts (counted from interrupt EVENTS), dispels/purges, deaths,
+ * personal-defensive presses (with the incoming damage each overlapped) and the
+ * external/party defensives the applicant CAST for the group — plus per-boss
+ * damage/healing filtered to the boss NPC (adds dragged in are excluded).
+ *
+ * `personalDefensives` / `providedExternals` are [{spellId,name}] the caller
+ * derives from the applicant's class/spec (kept in the TS game layer so this
+ * JS engine stays data-free). Personal presses come from the Buffs table (a
+ * press "mitigated" when incoming damage falls inside its buff band); provided
+ * externals are matched against the applicant's own Casts.
+ *
+ * @returns metrics object consumed by analysis/applicant.js
+ */
+export async function fetchApplicantRun({
+  code,
+  fightID,
+  playerName,
+  server = null,
+  className = null,
+  personalDefensives = [],
+  providedExternals = [],
+  interruptSpellId = null,
+  canDispel = true,
+  avoidable = [],
+  refresh = false,
+}) {
+  // 1. The ONE keystone fight (spans this dungeon) + its per-boss pulls + actors.
+  //    A M+ report often holds several dungeon runs; this fightID isolates one.
+  const rd = await gql(REPORT_KEYSTONE_PULLS, { code, fightIDs: [fightID] }, { noCache: refresh });
+  const report = rd?.reportData?.report;
+  const runFight = report?.fights?.[0];
+  const actors = report?.masterData?.actors ?? [];
+  if (!runFight) {
+    dumpDebug('applicant-no-fight', { code, fightID, rd });
+    throw new Error(`Report ${code} has no fight ${fightID}`);
+  }
+  const actor = resolveActor(actors, playerName, { server, className });
+  if (!actor) {
+    dumpDebug('applicant-actor-unresolved', { code, fightID, playerName });
+    throw new Error(`Player ${playerName} not found in report ${code}`);
+  }
+  const runMs = Math.max(0, (runFight.endTime ?? 0) - (runFight.startTime ?? 0));
+  const runSec = runMs / 1000 || 1;
+
+  // 2. Whole-run tables (one sourceID; pets fold in). Covers the WHOLE dungeon,
+  //    not just bosses.
+  const tv = { code, fightIDs: [fightID], sourceID: actor.id };
+  const damageT = await gql(REPORT_TABLE, { ...tv, dataType: 'DamageDone' }, { noCache: refresh });
+  const healingT = await gql(REPORT_TABLE, { ...tv, dataType: 'Healing' }, { noCache: refresh });
+  const takenT = await gql(REPORT_TABLE, { ...tv, dataType: 'DamageTaken' }, { noCache: refresh });
+  // Only classes that can dispel get the Dispels table — otherwise the metric is
+  // hidden (null), not a misleading 0. DK/DH/Warrior/Rogue have no dispel.
+  const dispelsT = canDispel ? await gql(REPORT_TABLE, { ...tv, dataType: 'Dispels' }, { noCache: refresh }) : null;
+  const deathsT = await gql(REPORT_TABLE, { ...tv, dataType: 'Deaths' }, { noCache: refresh });
+  const buffsT = await gql(REPORT_TABLE, { ...tv, dataType: 'Buffs' }, { noCache: refresh });
+  const castsT = await gql(REPORT_TABLE, { ...tv, dataType: 'Casts' }, { noCache: refresh });
+
+  const damage = parseDamageTable(rdTable(damageT));
+  const healing = parseHealingTable(rdTable(healingT));
+  const taken = parseDamageTakenTable(rdTable(takenT));
+  const dispels = dispelsT ? parseDispelsTable(rdTable(dispelsT)) : null;
+  const deaths = parseDeathsTable(rdTable(deathsT));
+  const buffs = parseBuffsTable(rdTable(buffsT));
+  const casts = parseCastsTable(rdTable(castsT));
+
+  // Interrupts, whole run. Two numbers:
+  //   attempts = CASTS of the spec's kick (Mind Freeze, Kick, Pummel...) from
+  //              the Casts table — reliable, includes casts that hit nothing.
+  //   landed   = SUCCESSFUL interrupts from the interrupt event stream, fetched
+  //              unfiltered and matched to our actor (sourceID filtering this
+  //              dataType server-side returned 0 on real M+ payloads).
+  const kick = interruptSpellId != null ? casts.abilities.find((a) => a.guid === interruptSpellId) : null;
+  const attempts = kick ? kick.casts : 0;
+  const landedParsed = parseInterruptEvents(
+    await paginateEvents(REPORT_INTERRUPT_EVENTS, { code, fightID, fight: runFight, noCache: refresh }),
+    actor.id
+  );
+  const interrupts = {
+    landed: landedParsed.total,
+    attempts,
+    // Prefer the honest landed count; fall back to attempts if the event stream
+    // is empty so the number is never wrongly 0 when the player clearly kicked.
+    total: landedParsed.total || attempts,
+    abilities: landedParsed.abilities.length
+      ? landedParsed.abilities
+      : kick
+      ? [{ guid: kick.guid, name: kick.name, count: kick.casts }]
+      : [],
+  };
+
+  // Damage-taken event stream (one paginated fetch) — feeds BOTH the defensive
+  // "did it mitigate" test AND the avoidable-damage tally. Only pulled if one of
+  // those needs it.
+  const takenEvents = personalDefensives.length || avoidable.length
+    ? parseDamageTakenEvents(
+        await paginateEvents(REPORT_DAMAGE_TAKEN_EVENTS, {
+          code,
+          fightID,
+          targetID: actor.id,
+          fight: runFight,
+          noCache: true, // raw stream — never persist; the derived counts are returned
+        })
+      )
+    : [];
+
+  // Avoidable damage: total only the hits from abilities the versioned dataset
+  // declares always-avoidable for this dungeon+player (the route pre-filters by
+  // role/spec). No dataset rows -> avoidableCounted:false and the score falls
+  // back to the taken-vs-output proxy rather than inventing a number.
+  const avoidableById = new Map(avoidable.map((a) => [a.spellId, a]));
+  const avoidableAgg = new Map();
+  let avoidableDamage = 0;
+  let avoidableHits = 0;
+  for (const ev of takenEvents) {
+    const def = avoidableById.get(ev.abilityGameID);
+    if (!def) continue;
+    avoidableDamage += ev.amount;
+    avoidableHits += 1;
+    const cur = avoidableAgg.get(ev.abilityGameID) ?? { spellId: ev.abilityGameID, name: def.name, category: def.category, severity: def.severity, amount: 0, hits: 0 };
+    cur.amount += ev.amount;
+    cur.hits += 1;
+    avoidableAgg.set(ev.abilityGameID, cur);
+  }
+
+  // 3a. Personal defensive presses + mitigation, from the player's own Buffs.
+  //     "Mitigated" tests the damage-taken event stream against each buff band.
+  const personalGuids = new Set(personalDefensives.map((d) => d.spellId));
+  const damageInBands = (bands) => {
+    let sum = 0;
+    for (const ev of takenEvents) {
+      for (const b of bands) {
+        if (ev.timestamp >= b.startTime && ev.timestamp <= b.endTime) {
+          sum += ev.amount;
+          break;
+        }
+      }
+    }
+    return sum;
+  };
+  const personalUsed = [];
+  for (const aura of buffs.auras) {
+    if (aura.guid == null || !personalGuids.has(aura.guid)) continue;
+    const mitigated = damageInBands(aura.bands);
+    personalUsed.push({ spellId: aura.guid, name: aura.name, uses: aura.uses, mitigatedAmount: mitigated, mitigated: mitigated > 0 });
+  }
+
+  // 3b. External/party defensives the applicant CAST for the group (AMZ, Sac,
+  //     Barrier...). Matched against the applicant's own Casts — this is what
+  //     they PROVIDED, not what they received.
+  const externalByGuid = new Map(providedExternals.map((d) => [d.spellId, d.name]));
+  const externalsPerformed = [];
+  for (const ability of casts.abilities) {
+    if (ability.guid == null || !externalByGuid.has(ability.guid)) continue;
+    externalsPerformed.push({ spellId: ability.guid, name: externalByGuid.get(ability.guid) ?? ability.name, casts: ability.casts });
+  }
+
+  // 4. Per-boss damage/healing. The dungeon's bosses are this keystone fight's
+  //    dungeonPulls with encounterID != 0 (encounterID 0 = trash). Damage is
+  //    filtered to the boss NPC (targetID) so adds dragged into the pull don't
+  //    inflate it — the user wants damage ON the boss, not during the pull.
+  const bossPulls = (runFight.dungeonPulls ?? []).filter((p) => p && p.encounterID);
+  const bosses = [];
+  for (const pull of bossPulls) {
+    const bossMs = Math.max(0, (pull.endTime ?? 0) - (pull.startTime ?? 0));
+    const bossSec = bossMs / 1000 || 1;
+    const window = { code, fightIDs: [fightID], sourceID: actor.id, startTime: pull.startTime, endTime: pull.endTime };
+
+    // Damage ON the boss = sum over the pull's boss NPCs. A boss/co-boss is a
+    // single-instance enemy NPC (Saprish + the other two of a 3-boss council are
+    // each one instance); multi-instance NPCs are trash/adds and are excluded.
+    // If it comes back 0 (odd encounter), fall back to whole-pull damage so a
+    // boss never shows a false 0.
+    const bossNpcIds = bossNpcIdsFor(pull);
+    let damage = 0;
+    let bossOnly = bossNpcIds.length > 0;
+    for (const tid of bossNpcIds) {
+      const t = parseDamageTable(rdTable(await gql(REPORT_TABLE_WINDOW, { ...window, targetID: tid, dataType: 'DamageDone' }, { noCache: refresh })));
+      damage += t.totalDamage;
+    }
+    if (damage === 0) {
+      const t = parseDamageTable(rdTable(await gql(REPORT_TABLE_WINDOW, { ...window, targetID: null, dataType: 'DamageDone' }, { noCache: refresh })));
+      damage = t.totalDamage;
+      bossOnly = false;
+    }
+
+    // Healing over the whole pull window (healing has no "on the boss" meaning).
+    const bHeal = parseHealingTable(rdTable(await gql(REPORT_TABLE_WINDOW, { ...window, targetID: null, dataType: 'Healing' }, { noCache: refresh })));
+    bosses.push({
+      encounterID: pull.encounterID,
+      name: pull.name ?? null,
+      kill: pull.kill ?? null,
+      durationMs: bossMs,
+      bossOnly,
+      damage,
+      dps: damage / bossSec,
+      healing: bHeal.totalHealing,
+      hps: bHeal.totalHealing / bossSec,
+    });
+  }
+
+  return {
+    code,
+    fightID,
+    keyLevel: runFight.keystoneLevel ?? null,
+    durationMs: runMs,
+    player: { id: actor.id, name: actor.name, class: actor.subType, server: actor.server },
+    overall: {
+      damage: damage.totalDamage,
+      dps: damage.totalDamage / runSec,
+      healing: healing.totalHealing,
+      hps: healing.totalHealing / runSec,
+      damageTaken: taken.totalDamage,
+      damageTakenAbilities: taken.abilities.slice(0, 10),
+      avoidableCounted: avoidable.length > 0,
+      avoidableDamage,
+      avoidableHits,
+      avoidableAbilities: [...avoidableAgg.values()].sort((a, b) => b.amount - a.amount),
+      interrupts: interrupts.total,
+      interruptsLanded: interrupts.landed,
+      interruptsAttempts: interrupts.attempts,
+      interruptAbilities: interrupts.abilities,
+      dispels: dispels ? dispels.dispels : null,
+      purges: dispels ? dispels.purges : null,
+      deaths: deaths.deaths,
+      defensives: personalUsed,
+      externals: externalsPerformed,
+    },
+    bosses,
+  };
 }
 
 /**
@@ -704,6 +955,22 @@ export function resolveActor(actors, playerName, { server = null, className = nu
     (wantClass && named.find((a) => slug(a.subType) === wantClass)) ||
     named[0]
   );
+}
+
+/**
+ * Boss/co-boss NPC actor ids of one dungeon pull, from its enemyNPCs. A boss is
+ * a single-instance NPC (maximumInstanceID <= 1); trash/adds spawn in multiples.
+ * A 3-boss council returns all three. Capped so a weird encounter can't fan out
+ * into dozens of targetID calls. Empty -> caller uses whole-pull damage.
+ */
+function bossNpcIdsFor(pull) {
+  const npcs = Array.isArray(pull?.enemyNPCs) ? pull.enemyNPCs : [];
+  const ids = [];
+  for (const n of npcs) {
+    if (!n || typeof n.id !== 'number' || n.id <= 0) continue;
+    if ((n.maximumInstanceID ?? 1) <= 1) ids.push(n.id);
+  }
+  return ids.slice(0, 5);
 }
 
 function avg(nums) {

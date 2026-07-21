@@ -139,12 +139,12 @@ export function SoloQueueClient({
 
       {status === "matched" && (
         <div className="space-y-3 text-center">
-          <p className="text-sm text-emerald-300 font-semibold">You're in! A leader accepted your queue match.</p>
+          <p className="text-sm text-emerald-300 font-semibold">You're in - a leader picked up your match.</p>
           <Link
             href={groupId ? `/runs?highlight=${groupId}` : "/runs"}
             className="btn-gold w-full block text-center"
           >
-            See Key Listed
+            See the key
           </Link>
         </div>
       )}

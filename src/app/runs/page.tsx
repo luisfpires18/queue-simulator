@@ -31,7 +31,7 @@ export default async function RunsPage() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-2xl font-black">M+ Runs</h1>
-          <p className="text-gray-400 text-sm">Live keys listed by players.</p>
+          <p className="text-gray-400 text-sm">Open keys, posted by players right now.</p>
         </div>
         {loggedIn && (
           <Link href="/list" className="btn-gold">List your Key</Link>

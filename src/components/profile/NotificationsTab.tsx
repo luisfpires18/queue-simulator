@@ -22,6 +22,12 @@ interface Prefs {
   excludedDungeons: string[];
 }
 
+interface NotificationTypeInfo {
+  type: string;
+  label: string;
+  description: string;
+}
+
 export function NotificationsTab() {
   const [supported, setSupported] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -29,6 +35,11 @@ export function NotificationsTab() {
   const [prefs, setPrefs] = useState<Prefs>({ minLevel: 2, maxLevel: 25, excludedDungeons: [] });
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Described by the notification registry and delivered by the preferences
+  // GET, so a new notification type gets its switch here without this file
+  // changing.
+  const [types, setTypes] = useState<NotificationTypeInfo[]>([]);
+  const [typeSettings, setTypeSettings] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setSupported(typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window);
@@ -42,6 +53,14 @@ export function NotificationsTab() {
           maxLevel: g.maxLevel ?? 25,
           excludedDungeons: g.excludedDungeons ?? [],
         });
+
+        const list: NotificationTypeInfo[] = data.types ?? [];
+        setTypes(list);
+        // Absent means on - these are consequences of your own actions, so the
+        // default is to hear about them.
+        setTypeSettings(
+          Object.fromEntries(list.map((t) => [t.type, data.settings?.[t.type]?.enabled !== false]))
+        );
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -67,7 +86,7 @@ export function NotificationsTab() {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
-        setMsg("Notification permission denied.");
+        setMsg("Looks like notifications are blocked - flip them back on in your browser settings.");
         return;
       }
       const registration = await navigator.serviceWorker.ready;
@@ -83,7 +102,7 @@ export function NotificationsTab() {
       await savePreferences(true, prefs);
       setEnabled(true);
     } catch {
-      setMsg("Couldn't enable notifications.");
+      setMsg("Something went wrong turning those on. Give it another go?");
     } finally {
       setBusy(false);
     }
@@ -115,6 +134,19 @@ export function NotificationsTab() {
     savePreferences(enabled, next);
   };
 
+  /** Per-type opt-out for the direct recruitment notifications. These default
+   * to ON (an absent setting means enabled), so this only ever writes an
+   * explicit `false` or clears it back. The preferences PUT shallow-merges, so
+   * writing one type's slice leaves the key-listing settings alone. */
+  const toggleType = async (type: string, nextEnabled: boolean) => {
+    setTypeSettings((prev) => ({ ...prev, [type]: nextEnabled }));
+    await fetch("/api/notifications/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, settings: { [type]: { enabled: nextEnabled } } }),
+    });
+  };
+
   const toggleDungeon = (id: string) => {
     const excludedDungeons = prefs.excludedDungeons.includes(id)
       ? prefs.excludedDungeons.filter((d) => d !== id)
@@ -127,7 +159,7 @@ export function NotificationsTab() {
   if (!supported) {
     return (
       <div className="panel p-10 text-center text-gray-500">
-        Push notifications aren't supported in this browser.
+        This browser can't do push notifications. Try it from your phone once you've added the app to your home screen.
       </div>
     );
   }
@@ -143,15 +175,27 @@ export function NotificationsTab() {
           className="mt-0.5 accent-accent"
         />
         <span>
-          <span className="block text-sm font-bold text-gray-200">Receive push notifications</span>
+          {/* This is the master switch for ALL push, not just key alerts: it
+              owns the subscription itself (see enable/disable above, which
+              subscribe and unsubscribe). Naming it after key listings alone
+              would lead someone who does not care about those to turn it off
+              and silently lose their application and trial notifications. */}
+          <span className="block text-sm font-bold text-gray-200">Push notifications</span>
           <span className="block text-xs text-gray-500 mt-0.5">
-            Get notified when a new group is listed at a key level you care about — even when this tab isn't open.
+            Key alerts and recruitment updates, even when this tab's closed. Turning this off stops all of
+            them.
           </span>
         </span>
       </label>
 
       <div className={cn("space-y-5", !enabled && "opacity-40 pointer-events-none")}>
         <div>
+          <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+            New key listed
+          </label>
+          <p className="text-[11px] text-gray-500 mb-2">
+            Which keys are worth a ping. Off by default until you turn notifications on.
+          </p>
           <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
             Key level
           </label>
@@ -186,7 +230,7 @@ export function NotificationsTab() {
           <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
             Dungeons
           </label>
-          <p className="text-[11px] text-gray-500 mb-2">All included by default — click one to leave it out.</p>
+          <p className="text-[11px] text-gray-500 mb-2">Everything's on by default. Tap one to skip it.</p>
           <div className="flex flex-wrap gap-2">
             {DUNGEONS.map((d) => {
               const excluded = prefs.excludedDungeons.includes(d.id);
@@ -195,7 +239,7 @@ export function NotificationsTab() {
                   key={d.id}
                   type="button"
                   onClick={() => toggleDungeon(d.id)}
-                  title={excluded ? `${d.name} — excluded, click to include` : `${d.name} — included, click to exclude`}
+                  title={excluded ? `${d.name} - skipped, tap to include` : `${d.name} - included, tap to skip`}
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-md border px-2 py-1.5 text-[11px]",
                     excluded ? "border-panelborder text-gray-600" : "border-accent bg-accent/10 text-accent"
@@ -209,6 +253,33 @@ export function NotificationsTab() {
           </div>
         </div>
       </div>
+
+      {types.length > 0 && (
+        <div className={cn("border-t border-panelborder pt-5", !enabled && "opacity-40 pointer-events-none")}>
+          <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">
+            Recruitment
+          </label>
+          <p className="text-[11px] text-gray-500 mb-3">
+            These are about things you are already part of, so they are on by default.
+          </p>
+          <div className="space-y-2.5">
+            {types.map((t) => (
+              <label key={t.type} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={typeSettings[t.type] ?? true}
+                  onChange={(e) => toggleType(t.type, e.target.checked)}
+                  className="mt-0.5 accent-accent"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-gray-200">{t.label}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">{t.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {msg && <span className="text-sm text-gray-400">{msg}</span>}
     </div>

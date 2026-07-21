@@ -57,8 +57,8 @@ export function DungeonOverview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, specId]);
 
-  if (loading) return <div className="panel p-6 text-sm text-gray-500">Loading your dungeons…</div>;
-  if (error) return <div className="panel p-6 text-sm text-rose-300">Error: {error}</div>;
+  if (loading) return <div className="panel p-6 text-sm text-gray-500">Pulling your dungeons…</div>;
+  if (error) return <div className="panel p-6 text-sm text-rose-300">Something went wrong: {error}</div>;
   if (!data) return null;
 
   const ranked = [...data.dungeons].sort((a, b) => {
@@ -128,7 +128,7 @@ export function DungeonOverview({
         ))}
       </div>
       <p className="mt-3 text-[11px] text-gray-500">
-        The bar <b>is</b> the percentile, so it reads the same in every dungeon. Click a row to analyse your best run there against the top runs of your spec at that key level.
+        That bar <b>is</b> the percentile, so it reads the same in every dungeon. Tap a row to stack your best run there against the top players of your spec at that key.
       </p>
     </div>
   );

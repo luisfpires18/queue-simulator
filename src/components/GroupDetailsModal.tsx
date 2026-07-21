@@ -6,7 +6,7 @@ import { RAID_BY_ID, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/r
 import { MISC_ICON } from "@/game/icons";
 import {
   computeBuffCoverage, computeUtilityCoverage, computeDefensiveCoverage, computeExternalDefensiveCoverage,
-  computeDispelCoverage, computeEnemyDispelCoverage,
+  computeDispelCoverage, computeEnemyDispelCoverage, computeSkipCoverage,
 } from "@/game/coverage";
 import { specById, CLASS_BY_ID, type Role } from "@/game/classes";
 import { requirementChipLabel, startInfo } from "@/lib/format";
@@ -68,6 +68,8 @@ export function GroupDetailsModal({
   const externalDefensiveCoverage = computeExternalDefensiveCoverage(haveSpecIds, desiredSpecIds);
   const dispelCoverage = computeDispelCoverage(haveSpecIds, desiredSpecIds);
   const enemyDispelCoverage = computeEnemyDispelCoverage(haveSpecIds, desiredSpecIds);
+  const skipCoverage = computeSkipCoverage(haveSpecIds, desiredSpecIds);
+  const isKey = group.kind !== "raid"; // skips are a Mythic+ thing
 
   return (
     <Modal open={open} onClose={onClose} panelClassName="panel w-full max-w-lg max-h-[85vh] overflow-y-auto p-4 space-y-4">
@@ -208,6 +210,7 @@ export function GroupDetailsModal({
         <CoveragePanel title="Enemy Magic Dispels" coverage={enemyDispelCoverage} />
         <CoveragePanel title="Party Defensives" coverage={defensiveCoverage} />
         <CoveragePanel title="External Defensives" coverage={externalDefensiveCoverage} />
+        {isKey && <CoveragePanel title="Skips" coverage={skipCoverage} />}
 
         {group.combos.length > 0 && (
           <div>

@@ -7,6 +7,7 @@ import { DEFENSIVES } from "./defensives";
 import { EXTERNAL_DEFENSIVES } from "./externalDefensives";
 import { DISPELS } from "./dispels";
 import { ENEMY_DISPELS } from "./enemyDispels";
+import { SKIPS } from "./skips";
 import { MOVEMENT } from "./movement";
 import { WARLOCK_UTILITY } from "./warlockUtility";
 import { ENEMY_REPOSITIONING } from "./enemyRepositioning";
@@ -109,6 +110,14 @@ export function computeBuffCoverage(
   desiredSpecIds: (string | null | undefined)[]
 ): BasicCoverage {
   return computeClassCoverage(BUFFS, actualSpecIds, desiredSpecIds);
+}
+
+// Trash-skip tools (Shroud, Demonic Gateway, Rescue) — class-wide, like buffs.
+export function computeSkipCoverage(
+  actualSpecIds: (string | null | undefined)[],
+  desiredSpecIds: (string | null | undefined)[]
+): BasicCoverage {
+  return computeClassCoverage(SKIPS, actualSpecIds, desiredSpecIds);
 }
 
 // Enemy magic dispels / Purge / Enrage removal — opposite direction from

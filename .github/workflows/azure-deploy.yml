@@ -9,11 +9,11 @@ name: Deploy to Azure App Service
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: queue-simulator # change to your App Service name
+  AZURE_WEBAPP_NAME: queuesimulator
 
 jobs:
   deploy:

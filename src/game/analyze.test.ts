@@ -123,6 +123,6 @@ describe("completeness + rating tier", () => {
 
   it("avg rating maps to the right tier", () => {
     const a = analyzeGroup([M("mage:frost", 4100), M("druid:guardian", 4100)]);
-    expect(a.ratingTier.id).toBe("legend");
+    expect(a.ratingTier.id).toBe("artifact");
   });
 });

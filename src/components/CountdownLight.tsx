@@ -62,7 +62,7 @@ export function CountdownLight({ startsAt }: { startsAt: string | null }) {
   const tier = tierFor(minutesAway);
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-gray-300">
+    <span className="inline-flex items-center gap-1.5 text-sm text-gray-300">
       <span className={cn("inline-block w-2 h-2 rounded-full", TIER_DOT[tier], tier === "green" && "animate-pulse")} />
       {formatCountdown(startsAt, now)}
     </span>

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CharacterBoard } from "./CharacterBoard";
-import { ImprovementTab } from "../improvement/ImprovementTab";
 import { NotificationsTab } from "./NotificationsTab";
 import { SettingsTab } from "./SettingsTab";
 import { WowIcon } from "@/components/WowIcon";
@@ -37,7 +36,7 @@ interface Character {
 }
 
 export function ProfileClient({ initial }: { initial: Character[] }) {
-  const [tab, setTab] = useState<"characters" | "improvement" | "notifications" | "settings">("characters");
+  const [tab, setTab] = useState<"characters" | "notifications" | "settings">("characters");
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
@@ -59,20 +58,13 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <TabCard
           active={tab === "characters"}
           onClick={() => setTab("characters")}
           icon={MISC_ICON.roster}
           title="Characters"
           description="Sync your roster, arrange buckets, and set main specs."
-        />
-        <TabCard
-          active={tab === "improvement"}
-          onClick={() => setTab("improvement")}
-          icon={MISC_ICON.parse}
-          title="Parse Improvement"
-          description="Compare your parses against top players."
         />
         <TabCard
           active={tab === "notifications"}
@@ -116,8 +108,6 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
         ) : (
           <CharacterBoard initial={initial} />
         )
-      ) : tab === "improvement" ? (
-        <ImprovementTab characters={initial} />
       ) : tab === "notifications" ? (
         <NotificationsTab />
       ) : (

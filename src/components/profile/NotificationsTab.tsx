@@ -145,7 +145,7 @@ export function NotificationsTab() {
         <span>
           <span className="block text-sm font-bold text-gray-200">Receive push notifications</span>
           <span className="block text-xs text-gray-500 mt-0.5">
-            Get notified when a new group is listed at a key level you care about — even when this tab isn't open.
+            Get notified when a new group is listed at a key level you care about, even when this tab isn't open.
           </span>
         </span>
       </label>
@@ -186,7 +186,7 @@ export function NotificationsTab() {
           <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
             Dungeons
           </label>
-          <p className="text-[11px] text-gray-500 mb-2">All included by default — click one to leave it out.</p>
+          <p className="text-[11px] text-gray-500 mb-2">All included by default. Click one to leave it out.</p>
           <div className="flex flex-wrap gap-2">
             {DUNGEONS.map((d) => {
               const excluded = prefs.excludedDungeons.includes(d.id);
@@ -195,7 +195,7 @@ export function NotificationsTab() {
                   key={d.id}
                   type="button"
                   onClick={() => toggleDungeon(d.id)}
-                  title={excluded ? `${d.name} — excluded, click to include` : `${d.name} — included, click to exclude`}
+                  title={excluded ? `${d.name} - excluded, click to include` : `${d.name} - included, click to exclude`}
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-md border px-2 py-1.5 text-[11px]",
                     excluded ? "border-panelborder text-gray-600" : "border-accent bg-accent/10 text-accent"

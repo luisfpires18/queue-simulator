@@ -25,7 +25,7 @@ import { queryKeys, useMyApplication, type MyApplicationResponse } from "@/lib/q
 import { cn } from "@/lib/utils";
 
 type CardSlot =
-  | { kind: "filled"; characterId: string; specId: string | null; classId: string; name: string; role: string }
+  | { kind: "filled"; characterId: string; specId: string | null; classId: string; name: string; role: string; isLeader: boolean }
   | { kind: "open"; role: string; prefs: string[] };
 
 /** Ordered, deduped specs per role across all desired combos — the "priority"
@@ -61,9 +61,14 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
         onClick={onClick}
         disabled={!onClick}
         title={onClick ? "View rating details" : undefined}
-        className="flex flex-col items-center gap-1 w-16 disabled:cursor-default"
+        className="flex flex-col items-center gap-1 w-12 sm:w-16 disabled:cursor-default"
       >
-        <div className="rounded-md p-0.5" style={{ background: color ? `${color}22` : undefined }}>
+        <div className="relative rounded-md p-0.5" style={{ background: color ? `${color}22` : undefined }}>
+          {slot.isLeader && (
+            <span className="absolute -top-1 -left-1 text-[11px] leading-none z-10" title="Group leader">
+              👑
+            </span>
+          )}
           <SpecIcon specId={slot.specId ?? `${slot.classId}:unknown`} size={44} />
         </div>
         <span className="text-[10px] text-gray-200 truncate w-full text-center">{slot.name}</span>
@@ -71,13 +76,18 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
     );
   }
   const count = slot.prefs.length;
+  const [open, setOpen] = useState(false);
   return (
-    <div className="group relative flex flex-col items-center gap-1 w-16">
-      {/* open slot = a ROLE need placeholder (gray); the accepted specs live in the popover */}
-      <div
+    <div className="group relative flex flex-col items-center gap-1 w-12 sm:w-16">
+      {/* open slot = a ROLE need placeholder (gray); the accepted specs live in the popover.
+          onClick (not just group-hover) so tapping reveals it on touch devices too. */}
+      <button
+        type="button"
+        onClick={() => count > 0 && setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
         className={cn(
-          "relative w-[46px] h-[46px] rounded-md border border-dashed grid place-items-center bg-panel2/40",
-          count > 0 && "cursor-help",
+          "relative w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] rounded-md border border-dashed grid place-items-center bg-panel2/40",
+          count > 0 && "cursor-pointer",
           ROLE_BORDER[slot.role]
         )}
       >
@@ -87,12 +97,17 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
             {count}
           </span>
         )}
-      </div>
+      </button>
       <span className="text-[10px] text-gray-500">{ROLE_LABEL[slot.role as Role] ?? "open"}</span>
 
-      {/* hover popover: full ordered accepted specs, in full colour */}
+      {/* group-hover reveals it for mouse users, `open` reveals it on tap for touch */}
       {slot.prefs.length > 0 && (
-        <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20 w-44 panel p-2 shadow-card">
+        <div
+          className={cn(
+            "hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20 w-44 panel p-2 shadow-card",
+            open && "!block"
+          )}
+        >
           <div className="text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
             {ROLE_LABEL[slot.role as Role]} - accepts, in order
           </div>
@@ -186,6 +201,7 @@ function GroupCardInner({
     classId: m.classId,
     name: m.name,
     role: m.role,
+    isLeader: m.userId === group.ownerUserId,
   }));
   // an open slot's "accepts, in order" falls back to the desired-comps specs
   // for its role whenever the poster didn't fill per-slot prefs directly —
@@ -234,15 +250,28 @@ function GroupCardInner({
           </>
         ) : (
           <>
-            <WowIcon slug={MISC_ICON.keystone} size={22} cdnSize="medium" rounded="sm" />
+            <WowIcon slug={dungeon?.icon ?? MISC_ICON.keystone} size={22} cdnSize="medium" rounded="sm" />
             <span className="text-accent font-black text-lg tabular-nums">+{group.keyLevel}</span>
             <span className="font-bold truncate">{dungeon?.name ?? group.dungeonId}</span>
           </>
         )}
-        <span className="ml-auto text-sm text-gray-300 truncate max-w-[45%]">{group.title}</span>
       </div>
-      <div className="flex items-center gap-2 -mt-2 text-[11px] text-gray-500">
-        <span>{startInfo(group.startsAt).label}</span>
+      {group.description && <p className="text-xs text-gray-400 -mt-1">{group.description}</p>}
+
+      {/* slots */}
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+        {cardSlots.map((s, i) => (
+          <SlotSquare
+            key={i}
+            slot={s}
+            onClick={s.kind === "filled" && s.specId ? () => openRating(s.characterId, s.specId!) : undefined}
+          />
+        ))}
+      </div>
+
+      {/* start time */}
+      <div className="flex items-center gap-2 flex-wrap border-t border-panelborder pt-2 text-sm">
+        <span className="font-semibold text-accent">{startInfo(group.startsAt).label}</span>
         <CountdownLight startsAt={group.startsAt} />
         {requirementLabel && (
           <span className="chip border border-panelborder text-gray-400" title="Applicant requirement (advisory only)">
@@ -258,18 +287,6 @@ function GroupCardInner({
             🗺️ Route
           </button>
         )}
-      </div>
-      {group.description && <p className="text-xs text-gray-400 -mt-1">{group.description}</p>}
-
-      {/* slots */}
-      <div className="flex flex-wrap gap-2">
-        {cardSlots.map((s, i) => (
-          <SlotSquare
-            key={i}
-            slot={s}
-            onClick={s.kind === "filled" && s.specId ? () => openRating(s.characterId, s.specId!) : undefined}
-          />
-        ))}
       </div>
 
       {group.combos.length > 0 && (
@@ -291,40 +308,44 @@ function GroupCardInner({
         <PendingRequestsModal groupId={group.id} dungeonId={group.dungeonId} onResolved={() => router.refresh()} />
       )}
 
-      <div className="flex items-center mt-auto">
-        <button
-          onClick={() => setDetailsOpen(true)}
-          className="chip border border-panelborder text-gray-400 hover:bg-panel2"
-        >
-          Details
-        </button>
+      <div className="flex items-center justify-end gap-2 mt-auto">
         {isOwner ? (
-          <span className="ml-auto text-[11px] text-gray-500">Your key</span>
+          <span className="text-[11px] text-gray-500">Your key</span>
         ) : myApp?.status === "accepted" ? (
-          <span className="ml-auto chip border border-emerald-500/50 bg-emerald-500/10 text-emerald-300">Accepted</span>
+          <span className="chip border border-emerald-500/50 bg-emerald-500/10 text-emerald-300">Accepted</span>
         ) : myApp?.status === "pending" ? (
           <button
             onClick={() => setApplyOpen(true)}
-            className="ml-auto chip border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+            className="chip border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
           >
             Applied - Pending
           </button>
         ) : myApp?.status === "declined" && declinedCount >= MAX_APPLICATION_DECLINES ? (
-          <span className="ml-auto chip border border-panelborder text-gray-500" title="Declined twice for this key - no more attempts">
+          <span className="chip border border-panelborder text-gray-500" title="Declined twice for this key - no more attempts">
             Declined twice
           </span>
         ) : isFull ? (
-          <span className="ml-auto chip border border-panelborder text-gray-500">Group full</span>
+          <span className="chip border border-panelborder text-gray-500">Group full</span>
         ) : (
           <button
             onClick={() => setApplyOpen(true)}
             disabled={!canApply}
             title={canApply ? undefined : "Log in with Battle.net to apply"}
-            className="ml-auto btn-gold px-3 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-gold px-3 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {myApp?.status === "declined" ? "Apply again" : "Apply"}
           </button>
         )}
+        <button
+          onClick={() => setDetailsOpen(true)}
+          title="View details"
+          className="w-6 h-6 rounded-full bg-accent text-black flex items-center justify-center hover:brightness-90"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
       </div>
 
       <ApplyModal

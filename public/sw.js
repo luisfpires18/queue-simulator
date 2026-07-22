@@ -11,9 +11,9 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data?.json() ?? {};
   } catch {
-    data = { title: "M+ Queue Sim", body: event.data?.text() ?? "" };
+    data = { title: "Queue Simulator", body: event.data?.text() ?? "" };
   }
-  const { title = "M+ Queue Sim", body = "", url = "/" } = data;
+  const { title = "Queue Simulator", body = "", url = "/" } = data;
   event.waitUntil(
     self.registration.showNotification(title, {
       body,

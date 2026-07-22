@@ -122,3 +122,17 @@ export function raidSizeRange(raidId: string, difficulty: RaidDifficulty): { min
   }
   return { min: 10, max: 30, fixed: false };
 }
+
+/** Mythic-difficulty boss kills vs. the total mythic boss count across every
+ * raid in RAIDS - dynamic, not hardcoded to specific raid ids, so a newly
+ * added raid tier is automatically included. */
+export function raidMythicProgress(raidKills: { raidId: string; bossId: string; difficulty: string }[]): {
+  killed: number;
+  total: number;
+  abbrLabel: string;
+} {
+  const total = RAIDS.reduce((sum, r) => sum + r.bosses.length, 0);
+  const killed = raidKills.filter((k) => k.difficulty === "mythic").length;
+  const abbrLabel = RAIDS.map((r) => r.abbr).join(" / ");
+  return { killed, total, abbrLabel };
+}

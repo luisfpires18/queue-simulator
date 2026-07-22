@@ -27,8 +27,9 @@ export default async function LandingPage() {
           Play more. Queue less.
         </h1>
         <p className="max-w-xl text-gray-400">
-          Find Mythic+ and raid groups by comp, not just a rating number. Coach your own parses
-          against the top players of your spec. Look up any character, on any server.
+          Enough of endless queue wait time for declines while you can't do anything else at the same time.
+          Find Mythic+ and raid groups by what the comp needs rather than a rating number. Compare
+          your own parses against the top players of your spec. Look up any character on any server.
         </p>
         <PlayerSearchBar className="w-full max-w-xl" initialRegion="eu" initialRealms={initialRealms} />
       </div>
@@ -36,7 +37,7 @@ export default async function LandingPage() {
       <HomeSection
         eyebrow="M+ Key Board"
         title="See the whole comp before you apply"
-        description="Blizzard's LFG shows a flat list of ratings. This board shows Bloodlust/Battle Res coverage, dispels, defensives, and role balance for every listed key — so you know if a group actually needs what you bring."
+        description="The default group finder is a flat list of ratings. This board also shows Bloodlust and Battle Res coverage, dispels, defensives, role balance, and run times for every listed key, so you can tell whether a group needs what you bring."
         cta={{ href: "/runs", label: "Browse open keys" }}
         visual={<KeyBoardMockup />}
       />
@@ -44,16 +45,16 @@ export default async function LandingPage() {
       <HomeSection
         reverse
         eyebrow="Raid Board"
-        title="Build your own roster, your way"
-        description="Pick your own tank/healer/dps split for any raid, any difficulty, any size — no forced formula. List it, and let players apply straight into the roles you actually need."
+        title="Pick your own roster split"
+        description="Set the tank/healer/dps split yourself for any raid, difficulty, and roster size. Nothing is locked to a preset. List it and players apply straight into the roles you still need."
         cta={{ href: "/raids", label: "Browse open raids" }}
         visual={<RaidBoardMockup />}
       />
 
       <HomeSection
         eyebrow="Character Roster"
-        title="One roster, every alt, one link to share"
-        description="Sync your characters from Battle.net, arrange your main and alts, and share one public profile link — so a recruiter or raid lead sees your whole roster at a glance."
+        title="All your alts on one shareable page"
+        description="Sync your characters from Battle.net and order your main and alts however you like. The public profile link shows a recruiter or raid lead your whole roster in one place."
         cta={{ href: "/profile", label: "Set up your roster" }}
         visual={<RosterMockup />}
       />
@@ -61,16 +62,16 @@ export default async function LandingPage() {
       <HomeSection
         reverse
         eyebrow="Parse Improvement"
-        title="Know exactly what to fix next"
-        description="Compare your Mythic+ and raid logs against a top player of your spec — or a whole cohort's median — and get concrete, data-derived advice: rotation gaps, wasted resources, missing consumables, not just a percentile."
+        title="See what to fix next"
+        description="Compare your Mythic+ and raid logs against a top player of your spec, or against the median of a whole cohort. You get the specifics behind the percentile: rotation gaps, wasted resources, consumables you skipped."
         cta={{ href: "/profile", label: "Compare your parses" }}
         visual={<CoachingMockup />}
       />
 
       <HomeSection
         eyebrow="Notifications"
-        title="Stop tab-switching to check the board"
-        description="Set your key-level range once and get pushed the moment a matching group opens — no more sitting on the group finder refreshing."
+        title="Get told when a key opens"
+        description="Set your key-level range once. A push arrives when a matching group is listed, so you can close the group finder and go do something else."
         cta={{ href: "/profile", label: "Set up alerts" }}
         visual={<NotificationsMockup />}
       />
@@ -79,7 +80,7 @@ export default async function LandingPage() {
         reverse
         eyebrow="Player Search"
         title="Look up anyone, on any server"
-        description="Search any character across every region and realm — registered here or not. Registered players get their full roster and history; anyone else gets an instant live snapshot."
+        description="Search any character across every region and realm, registered here or not. Registered players show their full roster and history. For everyone else you get a live snapshot pulled on the spot."
         visual={<SearchMockup />}
       />
     </div>

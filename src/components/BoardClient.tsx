@@ -14,7 +14,11 @@ import { type Role } from "@/game/classes";
 import { bloodlustFits } from "@/game/bloodlust";
 import { DUNGEONS } from "@/game/season";
 import { sortGroups, type BoardSortMode } from "@/lib/format";
+import { useLocalStorageState } from "@/lib/useLocalStorageState";
 import { cn } from "@/lib/utils";
+
+const setToJSON = (s: Set<string>) => [...s];
+const setFromJSON = (raw: unknown): Set<string> | null => (Array.isArray(raw) ? new Set(raw as string[]) : null);
 
 const MIN_KEY = 2;
 const MAX_KEY = 25;
@@ -58,13 +62,18 @@ export function BoardClient({
   initialSoloQueueStatus?: SoloQueueStatusDTO;
 }) {
   const { groups, live, removeGroup } = useLiveBoard(initial);
-  const [lo, setLo] = useState(MIN_KEY);
-  const [hi, setHi] = useState(MAX_KEY);
-  const [dungeons, setDungeons] = useState<Set<string>>(new Set());
-  const [roleMax, setRoleMax] = useState<Record<Role, number>>({ ...ROLE_MAX });
-  const [excludeSpecs, setExcludeSpecs] = useState<Set<string>>(new Set());
-  const [bloodlustFit, setBloodlustFit] = useState(false);
-  const [sort, setSort] = useState<BoardSortMode>("newest");
+  const [lo, setLo, clearLo] = useLocalStorageState("mplus-filters-lo-v1", MIN_KEY);
+  const [hi, setHi, clearHi] = useLocalStorageState("mplus-filters-hi-v1", MAX_KEY);
+  const [dungeons, setDungeons, clearDungeons] = useLocalStorageState<Set<string>>(
+    "mplus-filters-dungeons-v1", new Set(), { toJSON: setToJSON, fromJSON: setFromJSON }
+  );
+  const [roleMax, setRoleMax, clearRoleMax] = useLocalStorageState("mplus-filters-roleMax-v1", { ...ROLE_MAX });
+  const [excludeSpecs, setExcludeSpecs, clearExcludeSpecs] = useLocalStorageState<Set<string>>(
+    "mplus-filters-excludeSpecs-v1", new Set(), { toJSON: setToJSON, fromJSON: setFromJSON }
+  );
+  const [bloodlustFit, setBloodlustFit, clearBloodlustFit] = useLocalStorageState("mplus-filters-bloodlustFit-v1", false);
+  const [sort, setSort, clearSort] = useLocalStorageState<BoardSortMode>("mplus-filters-sort-v1", "newest");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Deep-link support: /runs?highlight=<groupId> (used by Solo Queue's "See
   // Key Listed" link after a match) jumps straight to that key regardless of
@@ -88,11 +97,11 @@ export function BoardClient({
       return next;
     });
   const resetAll = () => {
-    setLo(MIN_KEY); setHi(MAX_KEY);
-    setDungeons(new Set());
-    setRoleMax({ ...ROLE_MAX });
-    setExcludeSpecs(new Set());
-    setBloodlustFit(false);
+    clearLo(); clearHi();
+    clearDungeons();
+    clearRoleMax();
+    clearExcludeSpecs();
+    clearBloodlustFit();
   };
 
   const filtered = useMemo(
@@ -201,11 +210,20 @@ export function BoardClient({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
       {/* filters */}
-      <aside className="panel p-4 h-max lg:sticky lg:top-20 space-y-5">
-        <div className="flex items-center justify-between">
+      <aside className="panel h-max lg:sticky lg:top-20">
+        <button
+          onClick={() => setFiltersOpen((v) => !v)}
+          className="w-full flex items-center justify-between p-4 lg:hidden"
+        >
+          <span className="font-bold uppercase tracking-wide text-sm">Filters</span>
+          <span className="text-gray-500 text-xs">{filtersOpen ? "▲" : "▼"}</span>
+        </button>
+        <div className={cn("p-4 space-y-5", !filtersOpen && "hidden", "lg:block")}>
+        <div className="hidden lg:flex items-center justify-between">
           <h2 className="font-bold uppercase tracking-wide text-sm">Filters</h2>
           <button onClick={resetAll} className="text-xs text-gray-400 hover:text-white">reset all</button>
         </div>
+        <button onClick={resetAll} className="lg:hidden text-xs text-gray-400 hover:text-white -mt-2">reset all</button>
 
         {/* key range */}
         <div>
@@ -305,6 +323,7 @@ export function BoardClient({
             </span>
           </span>
         </label>
+        </div>
       </aside>
 
       {/* groups */}

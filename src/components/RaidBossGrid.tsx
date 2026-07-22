@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { RaidKillDTO } from "@/data/dto";
-import { RAIDS, RAID_KILL_DIFFICULTY_LABEL, type RaidKillDifficulty } from "@/game/raidSeason";
+import { RAIDS, RAID_KILL_DIFFICULTY_LABEL, raidMythicProgress, type RaidKillDifficulty } from "@/game/raidSeason";
 import { WowIcon } from "./WowIcon";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +41,7 @@ export function RaidBossGrid({
   const [open, setOpen] = useState(defaultOpen);
   const killByBoss = new Map(raidKills.map((k) => [`${k.raidId}:${k.bossId}`, k.difficulty]));
   const anyKills = raidKills.length > 0;
+  const progress = raidMythicProgress(raidKills);
 
   return (
     <div className="w-full pt-2 border-t border-panelborder/60">
@@ -48,6 +49,11 @@ export function RaidBossGrid({
         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
           Raid bosses
         </span>
+        {progress.total > 0 && (
+          <span className="text-[10px] text-gray-500 tabular-nums">
+            {progress.abbrLabel} <span className="text-purple-400 font-bold">{progress.killed}/{progress.total} M</span>
+          </span>
+        )}
         <span className="ml-auto text-gray-500 text-xs">{open ? "▲" : "▼"}</span>
       </button>
 

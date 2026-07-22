@@ -152,7 +152,7 @@ export function CharacterCard({
         <div className="text-[11px] text-gray-500">{c.realm}</div>
         <div className="text-[11px] text-gray-400">
           {c.rating != null ? (
-            <b style={{ color: ratingTier(c.rating).hex }}>{Math.round(c.rating).toLocaleString()}</b>
+            <b style={{ color: ratingTier(c.rating).hex }}>{Math.round(c.rating).toLocaleString("en-US")}</b>
           ) : (
             <span className="text-gray-300">lvl {c.level}</span>
           )}
@@ -185,7 +185,7 @@ export function CharacterCard({
                 className={rating != null ? "font-semibold text-gray-200 tabular-nums" : "text-gray-600"}
                 title={rating == null ? "No completed keys logged on this spec this season" : undefined}
               >
-                {rating != null ? Math.round(rating).toLocaleString() : "-"}
+                {rating != null ? Math.round(rating).toLocaleString("en-US") : "-"}
               </span>
             </div>
           );

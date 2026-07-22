@@ -25,7 +25,7 @@ export function startInfo(startsAt: string | null): { label: string; urgent: boo
   if (!startsAt) return { label: "Forming now", urgent: true };
   const d = new Date(startsAt);
   const minutesAway = (d.getTime() - Date.now()) / 60000;
-  const label = `Starts ${d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+  const label = `Starts ${d.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
   return { label, urgent: minutesAway <= 60 };
 }
 

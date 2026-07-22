@@ -182,7 +182,7 @@ function CastOrderCols({
   return (
     <div className="mt-3">
       <div className="text-[11px] text-gray-500 mb-2">
-        Rotation for <b>{whole ? "whole run" : `${fmtSec(lo)}–${fmtSec(hi)}`}</b> - drag on the chart above to inspect any window
+        Rotation for <b>{whole ? "whole run" : `${fmtSec(lo)}-${fmtSec(hi)}`}</b> - drag on the chart above to inspect any window
         {!whole && (
           <>
             {" · "}

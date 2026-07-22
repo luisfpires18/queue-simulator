@@ -4,7 +4,7 @@ import { countryByCode, flagUrl } from "@/game/countries";
 import { WowIcon } from "@/components/WowIcon";
 
 export function ProfileOverview({
-  battletag, memberSince, characterCount, main, country = null, live = false,
+  battletag, memberSince, characterCount, main, country = null, live = false, r1Titles = null,
 }: {
   battletag: string | null;
   /** null for a live (unregistered) snapshot - there's no account to have joined */
@@ -19,11 +19,15 @@ export function ProfileOverview({
    * than faked, and a small inline chip marks the data as live instead of a
    * separate banner. */
   live?: boolean;
+  /** Account-wide count of M+ Rank-1/Hall-of-Fame-style titles held (see
+   * src/game/mplusTitles.ts). Null hides the stat - either a Blizzard fetch
+   * failure, or genuinely not yet computed - distinct from a real 0. */
+  r1Titles?: number | null;
 }) {
   const cls = main ? CLASS_BY_ID[main.classId as ClassId] : null;
   const spec = main?.specId ? specById(main.specId) : null;
   const since = memberSince
-    ? new Date(memberSince).toLocaleDateString(undefined, { year: "numeric", month: "short" })
+    ? new Date(memberSince).toLocaleDateString("en-US", { year: "numeric", month: "short" })
     : null;
 
   return (
@@ -52,7 +56,10 @@ export function ProfileOverview({
       {!live && since && <Stat icon={MISC_ICON.clock} label="Member since" value={since} />}
       {!live && characterCount != null && <Stat icon={MISC_ICON.roster} label="Characters" value={String(characterCount)} />}
       {main?.rating != null && (
-        <Stat icon={MISC_ICON.keystone} label="Main rating" value={Math.round(main.rating).toLocaleString()} accent />
+        <Stat icon={MISC_ICON.keystone} label="Main rating" value={Math.round(main.rating).toLocaleString("en-US")} accent />
+      )}
+      {r1Titles != null && (
+        <Stat icon={MISC_ICON.keystone} label="M+ R1 Titles" value={String(r1Titles)} accent={r1Titles > 0} />
       )}
     </div>
   );

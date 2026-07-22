@@ -3,24 +3,30 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-function faviconUrl(domain: string): string {
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-}
-
+// Self-hosted, not Google's s2/favicons proxy - that endpoint gets silently
+// blocked by mobile ad-blockers and iOS Safari's cross-site-tracking
+// protections often enough that the icons just never rendered on real
+// phones (they worked fine testing server-side / desktop, where nothing
+// blocks it - a same-origin static asset can't be blocked the same way).
 // White backing circle regardless of theme - both sites' favicons have
 // transparent PNG margins that nearly vanish against this app's dark
-// panels without one (that was the earlier "icons aren't showing" bug -
-// the images WERE loading, just invisible at low opacity on a dark bg).
-function LinkIcon({ domain, alt, href, title }: { domain: string; alt: string; href: string; title: string }) {
+// panels without one.
+function LinkIcon({ src, alt, href, title }: { src: string; alt: string; href: string; title: string }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" title={title}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={faviconUrl(domain)}
+        src={src}
         width={16}
         height={16}
         alt={alt}
-        className="block rounded-full bg-white p-[1px] ring-1 ring-black/30"
+        // w-4 h-4 (explicit CSS px, not just the HTML attributes above) -
+        // these badges sit inside an absolutely-positioned wrapper with no
+        // intrinsic width, so Tailwind preflight's `img { max-width: 100%;
+        // height: auto }` was resolving against a ~0px containing block and
+        // collapsing the icon to a couple of pixels regardless of the image
+        // itself loading fine - confirmed via a real boundingBox() check.
+        className="block w-4 h-4 shrink-0 rounded-full bg-white p-[1px] ring-1 ring-black/30"
       />
     </a>
   );
@@ -30,13 +36,13 @@ function LinkIcons({ name, realmSlug, region }: { name: string; realmSlug: strin
   return (
     <>
       <LinkIcon
-        domain="raider.io"
+        src="/icons/links/raiderio.png"
         alt="Raider.IO"
         title="Raider.IO profile"
         href={`https://raider.io/characters/${region}/${realmSlug}/${encodeURIComponent(name)}`}
       />
       <LinkIcon
-        domain="warcraftlogs.com"
+        src="/icons/links/warcraftlogs.png"
         alt="Warcraft Logs"
         title="Warcraft Logs profile"
         href={`https://www.warcraftlogs.com/character/${region}/${realmSlug}/${encodeURIComponent(name)}`}
@@ -57,7 +63,13 @@ export function ProfileLinkBadges({
   region: string;
 }) {
   return (
-    <div className="absolute -top-1.5 -right-1.5 flex gap-1 z-10">
+    // w-max: this sits inside CharacterCard's absolutely-positioned,
+    // zero-width corner wrapper - without an explicit width, the browser's
+    // shrink-to-fit sizing resolves against that 0px containing block and
+    // squeezes both icons down to a couple of pixels each, even though each
+    // <img> itself has an explicit w-4. w-max forces sizing off the actual
+    // content instead (confirmed via a real getBoundingClientRect() probe).
+    <div className="absolute -top-1.5 -right-1.5 flex gap-1 z-10 w-max">
       <LinkIcons name={name} realmSlug={realmSlug} region={region} />
     </div>
   );

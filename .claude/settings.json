@@ -9,7 +9,8 @@
       "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>/dev/null; echo ok)",
       "PowerShell(node \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Workspace-queue-simulator\\\\3d8b5dde-2789-44f9-9a22-c74f6919ab35\\\\scratchpad\\\\migrate-imports.js\")",
       "PowerShell(npm run build 2>&1)",
-      "PowerShell(npm run dev)"
+      "PowerShell(npm run dev)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>&1; echo ok)"
     ],
     "additionalDirectories": [
       "d:\\Workspace\\queue_simulator\\src\\app\\player\\[region]\\[realmSlug]",

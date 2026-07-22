@@ -230,7 +230,7 @@ function CohortSection({ top, similar, myDps }: { top: any[]; similar: any[]; my
       {dps != null ? (
         <p className="text-sm">
           <b>{fmtK(myDps)}</b> you &nbsp;vs&nbsp; <b>{fmtK(dps)}</b> {label} median &nbsp;{gap}
-          <span className="text-gray-600"> &nbsp;({Math.round(dps).toLocaleString()} exact)</span>
+          <span className="text-gray-600"> &nbsp;({Math.round(dps).toLocaleString("en-US")} exact)</span>
         </p>
       ) : (
         <p className="text-xs text-gray-500">Not enough ranked runs to compute a median.</p>
@@ -279,7 +279,7 @@ function GapsSection({ gaps }: { gaps: any[] }) {
   if (!gaps?.length) {
     return (
       <Section title="Biggest gaps">
-        <p className="text-sm text-gray-500">Nothing stands out against this player - no significant gaps found.</p>
+        <p className="text-sm text-gray-500">Nothing stands out against this player.</p>
       </Section>
     );
   }

@@ -92,23 +92,25 @@ export function SoloQueueClient({
   }
 
   return (
-    <div className="panel p-6 space-y-5">
-      <div className="flex items-center gap-3">
-        <SpecIcon specId={specId} size={40} />
+    <div className="panel p-6 space-y-5 border-accent/40 ring-1 ring-accent/20">
+      <div className="flex items-center gap-4">
+        <SpecIcon specId={specId} size={64} />
         <div>
-          <div className="text-sm font-semibold">
+          <div className="text-base font-semibold">
             {current.character.name} <span className="text-gray-500 text-xs">- {current.character.realm}</span>
           </div>
-          <p className="text-xs text-gray-500 flex items-center gap-1.5">
-            Queuing as
-            <RoleIcon role={role} size={14} rounded="sm" />
-            <span className="text-gray-300 font-semibold">{ROLE_LABEL[role]}</span>
+          <p className="mt-1 flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-500">Queuing as</span>
+            <span className="chip inline-flex items-center gap-1.5 border border-accent/40 bg-accent/10 text-accent">
+              <RoleIcon role={role} size={14} rounded="sm" />
+              {ROLE_LABEL[role]}
+            </span>
           </p>
         </div>
-        <p className="ml-auto text-[11px] text-gray-500">Change character in the navbar picker ↑</p>
+        <p className="ml-auto text-[11px] text-gray-500 hidden sm:block">Change character in the navbar picker ↑</p>
       </div>
 
-      <p className="text-[11px] text-gray-500 -mt-2">
+      <p className="text-[11px] text-gray-500">
         Matching against{" "}
         <span className="text-gray-300">{levelUnrestricted ? "any key level" : `+${minKeyLevel}–${maxKeyLevel}`}</span>
         {dungeonNames.length > 0 && (

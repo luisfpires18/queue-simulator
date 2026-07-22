@@ -12,10 +12,13 @@ import { type Role } from "@/game/classes";
 import { bloodlustFits } from "@/game/bloodlust";
 import { RAIDS, RAID_DIFFICULTIES, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/raidSeason";
 import { sortGroups, type BoardSortMode } from "@/lib/format";
+import { useLocalStorageState } from "@/lib/useLocalStorageState";
 import { cn } from "@/lib/utils";
 
 const OTHERS_PAGE_SIZE = 10;
 const ROLES: Role[] = ["TANK", "HEALER", "DPS"];
+const setToJSON = (s: Set<string>) => [...s];
+const setFromJSON = (raw: unknown): Set<string> | null => (Array.isArray(raw) ? new Set(raw as string[]) : null);
 
 export function RaidBoardClient({
   initial, canList, current, viewerUserId, initialMyApps,
@@ -30,14 +33,22 @@ export function RaidBoardClient({
   initialMyApps?: Record<string, MyApplicationStateDTO>;
 }) {
   const { groups, live } = useLiveBoard(initial);
-  const [raids, setRaids] = useState<Set<string>>(new Set());
-  const [difficulties, setDifficulties] = useState<Set<RaidDifficulty>>(new Set());
+  const [raids, setRaids, clearRaids] = useLocalStorageState<Set<string>>(
+    "raid-filters-raids-v1", new Set(), { toJSON: setToJSON, fromJSON: setFromJSON }
+  );
+  const [difficulties, setDifficulties, clearDifficulties] = useLocalStorageState<Set<RaidDifficulty>>(
+    "raid-filters-difficulties-v1", new Set(),
+    { toJSON: (s) => [...s], fromJSON: (raw) => (Array.isArray(raw) ? new Set(raw as RaidDifficulty[]) : null) }
+  );
   // minimum still-OPEN slots per role - a write box, no upper bound, same as
   // the comp picker on the listing form.
-  const [minOpen, setMinOpen] = useState<Record<Role, number>>({ TANK: 0, HEALER: 0, DPS: 0 });
-  const [excludeSpecs, setExcludeSpecs] = useState<Set<string>>(new Set());
-  const [bloodlustFit, setBloodlustFit] = useState(false);
-  const [sort, setSort] = useState<BoardSortMode>("newest");
+  const [minOpen, setMinOpen, clearMinOpen] = useLocalStorageState("raid-filters-minOpen-v1", { TANK: 0, HEALER: 0, DPS: 0 });
+  const [excludeSpecs, setExcludeSpecs, clearExcludeSpecs] = useLocalStorageState<Set<string>>(
+    "raid-filters-excludeSpecs-v1", new Set(), { toJSON: setToJSON, fromJSON: setFromJSON }
+  );
+  const [bloodlustFit, setBloodlustFit, clearBloodlustFit] = useLocalStorageState("raid-filters-bloodlustFit-v1", false);
+  const [sort, setSort] = useLocalStorageState<BoardSortMode>("raid-filters-sort-v1", "newest");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const toggleRaid = (id: string) =>
     setRaids((s) => {
@@ -58,11 +69,11 @@ export function RaidBoardClient({
       return next;
     });
   const resetAll = () => {
-    setRaids(new Set());
-    setDifficulties(new Set());
-    setMinOpen({ TANK: 0, HEALER: 0, DPS: 0 });
-    setExcludeSpecs(new Set());
-    setBloodlustFit(false);
+    clearRaids();
+    clearDifficulties();
+    clearMinOpen();
+    clearExcludeSpecs();
+    clearBloodlustFit();
   };
 
   const filtered = useMemo(
@@ -113,11 +124,20 @@ export function RaidBoardClient({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
       {/* filters */}
-      <aside className="panel p-4 h-max lg:sticky lg:top-20 space-y-5">
-        <div className="flex items-center justify-between">
+      <aside className="panel h-max lg:sticky lg:top-20">
+        <button
+          onClick={() => setFiltersOpen((v) => !v)}
+          className="w-full flex items-center justify-between p-4 lg:hidden"
+        >
+          <span className="font-bold uppercase tracking-wide text-sm">Filters</span>
+          <span className="text-gray-500 text-xs">{filtersOpen ? "▲" : "▼"}</span>
+        </button>
+        <div className={cn("p-4 space-y-5", !filtersOpen && "hidden", "lg:block")}>
+        <div className="hidden lg:flex items-center justify-between">
           <h2 className="font-bold uppercase tracking-wide text-sm">Filters</h2>
           <button onClick={resetAll} className="text-xs text-gray-400 hover:text-white">reset all</button>
         </div>
+        <button onClick={resetAll} className="lg:hidden text-xs text-gray-400 hover:text-white -mt-2">reset all</button>
 
         {/* raid */}
         <div>
@@ -215,6 +235,7 @@ export function RaidBoardClient({
             </span>
           </span>
         </label>
+        </div>
       </aside>
 
       {/* groups */}

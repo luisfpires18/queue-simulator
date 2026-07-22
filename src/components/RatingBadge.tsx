@@ -9,7 +9,7 @@ export function RatingBadge({ rating, size = "md" }: { rating: number; size?: "s
       style={{ color: tier.hex, background: `${tier.hex}1a`, border: `1px solid ${tier.hex}44` }}
       title={`${tier.label} tier`}
     >
-      {rating.toLocaleString()}
+      {rating.toLocaleString("en-US")}
     </span>
   );
 }

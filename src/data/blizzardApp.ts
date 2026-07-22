@@ -52,6 +52,43 @@ async function gameDataGet<T>(region: string, path: string, namespace: "dynamic"
   return (await res.json()) as T;
 }
 
+// Character Profile endpoints (namespace "profile-<region>", not "dynamic"/
+// "static") are also reachable with the app token, not just a signed-in
+// user's - Blizzard only gates the account-list endpoints
+// (/profile/user/wow and friends) behind the character owner's own OAuth
+// token; everything keyed by realm+character name is public armory-style
+// data, same as src/data/blizzard.ts's apiGet but via client_credentials so
+// it works for ANY character, not just the app's own logged-in users.
+async function profileGet<T>(region: string, path: string): Promise<T | null> {
+  const token = await getAppAccessToken(region);
+  const sep = path.includes("?") ? "&" : "?";
+  const url = `${apiHost(region)}${path}${sep}namespace=profile-${region}&locale=${LOCALE}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) return null;
+  return (await res.json()) as T;
+}
+
+interface CharacterTitlesSummary {
+  titles?: { id: number; name: string }[];
+}
+
+/** Every title this character (i.e. this Battle.net account - titles are
+ * account-wide) has ever unlocked. Used to count season Rank-1/Hall-of-Fame
+ * style M+ titles - see src/game/mplusTitles.ts for the id list. Returns []
+ * on any failure (character not found, region typo, etc) rather than
+ * throwing - same best-effort behavior as the rest of the live profile path. */
+export async function fetchCharacterTitles(
+  region: string,
+  realmSlug: string,
+  name: string
+): Promise<{ id: number; name: string }[]> {
+  const data = await profileGet<CharacterTitlesSummary>(
+    region,
+    `/profile/wow/character/${encodeURIComponent(realmSlug)}/${encodeURIComponent(name.toLowerCase())}/titles`
+  );
+  return data?.titles ?? [];
+}
+
 export async function fetchCurrentPeriodId(region: string): Promise<number> {
   const data = await gameDataGet<{ current_period?: { id: number } }>(
     region,

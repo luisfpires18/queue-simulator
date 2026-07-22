@@ -32,7 +32,7 @@ export default async function ProfilePage() {
             className="pt-3 border-t border-panelborder/60"
           >
             <button className="btn-ghost text-xs px-3 py-1.5">
-              Dev login as TestHero#1111 (fake, seeded — ALLOW_DEV_LOGIN=1)
+              Dev login as TestHero#1111 (fake, seeded, ALLOW_DEV_LOGIN=1)
             </button>
           </form>
         )}

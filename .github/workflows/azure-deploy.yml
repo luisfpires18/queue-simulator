@@ -1,0 +1,48 @@
+name: Deploy to Azure App Service
+
+# Ships source only - Azure's Oryx builder runs `npm install` (which runs
+# `prisma generate` via the postinstall hook) and `npm run build` itself on
+# the App Service side. See the "Deploying to Azure" section in README.md
+# for the one-time Azure setup this workflow assumes already exists
+# (App Service app created, SCM_DO_BUILD_DURING_DEPLOYMENT=true, all env
+# vars set in Application Settings, AZURE_WEBAPP_PUBLISH_PROFILE secret).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: queue-simulator # change to your App Service name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      # Type/test gate - a broken deploy is worse than a slow one. `npm run
+      # lint` is deliberately NOT here: this repo has no ESLint config yet,
+      # so `next lint` prompts interactively on first run and would hang a
+      # non-interactive CI job. Add it back once `next lint` (or an eslint
+      # config committed some other way) has been run once locally.
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
+
+      # Ship clean source - node_modules from the gate steps above must NOT
+      # go in the package. Oryx installs + builds fresh on the App Service
+      # side (see SCM_DO_BUILD_DURING_DEPLOYMENT note at the top of this
+      # file); shipping a pre-built node_modules here would just confuse
+      # that and bloat the upload for no benefit.
+      - run: rm -rf node_modules
+
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .

@@ -1,6 +1,6 @@
 {
-  "name": "M+ Queue Simulator",
-  "short_name": "M+ Queue",
+  "name": "Queue Simulator",
+  "short_name": "Queue Sim",
   "description": "Smart Mythic+ group finder and parse analysis for WoW Midnight.",
   "start_url": "/",
   "scope": "/",

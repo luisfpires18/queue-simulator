@@ -1,9 +1,24 @@
 import Link from "next/link";
 import { getPublicCharacters } from "@/data/characters";
 import { fetchLivePlayerProfile } from "@/data/livePlayer";
+import { fetchCharacterTitles } from "@/data/blizzardApp";
+import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
 import { bestSpecFor } from "@/game/roster";
+
+// Titles are account-wide, so one character's title list already reflects
+// the whole account - no need to fetch per character on a multi-alt roster.
+// Best-effort: a Blizzard hiccup shouldn't fail the whole profile page, it
+// should just hide the stat (null, distinct from a genuine 0).
+async function fetchR1TitleCount(region: string, realmSlug: string, name: string): Promise<number | null> {
+  try {
+    const titles = await fetchCharacterTitles(region, realmSlug, name);
+    return titles.filter((t) => MPLUS_R1_TITLE_IDS.includes(t.id)).length;
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +46,7 @@ export default async function PlayerSearchResultPage({
     for (const c of registered.characters) byBucket[c.bucket]?.push(c);
     const mainChar = registered.characters.find((c) => c.isMain) ?? registered.characters[0] ?? null;
     const displayName = registered.battletag?.split("#")[0] ?? mainChar?.name ?? "Player";
+    const r1Titles = mainChar ? await fetchR1TitleCount(mainChar.region, mainChar.realmSlug, mainChar.name) : null;
 
     return (
       <div className="space-y-5">
@@ -42,13 +58,14 @@ export default async function PlayerSearchResultPage({
             characterCount={registered.characters.length}
             country={registered.country}
             main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null, rating: mainChar.rating }}
+            r1Titles={r1Titles}
           />
         )}
         {(["main", "alt"] as const).map((bucket) =>
           byBucket[bucket].length ? (
             <div key={bucket} className="panel p-4">
               <h2 className="text-sm font-bold uppercase tracking-wide mb-3">{BUCKET_TITLE[bucket]}</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {byBucket[bucket].map((c) => (
                   <CharacterCard key={c.id} character={c} dungeonsDefaultOpen showProfileLinks />
                 ))}
@@ -66,12 +83,14 @@ export default async function PlayerSearchResultPage({
       <div className="panel p-10 text-center space-y-2">
         <p className="text-gray-300 font-semibold">No character found.</p>
         <p className="text-gray-500 text-sm">
-          Check the name, realm, and region — or they may just have no logged Mythic+ runs yet.
+          Check the name, realm, and region. They may also have no logged Mythic+ runs yet.
         </p>
         <Link href="/" className="text-accent text-sm hover:underline inline-block mt-2">← Back home</Link>
       </div>
     );
   }
+
+  const liveR1Titles = await fetchR1TitleCount(live.region, live.realmSlug, live.name);
 
   return (
     <div className="space-y-5">
@@ -80,9 +99,10 @@ export default async function PlayerSearchResultPage({
         memberSince={null}
         characterCount={null}
         main={{ name: live.name, classId: live.classId, specId: live.specId, rating: live.rating }}
+        r1Titles={liveR1Titles}
         live
       />
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
         <CharacterCard character={live} dungeonsDefaultOpen showProfileLinks />
       </div>
     </div>

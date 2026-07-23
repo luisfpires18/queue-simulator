@@ -23,6 +23,10 @@ export interface CharacterDTO {
   sortOrder: number;
   wclZone: string | null;
   raidKills: RaidKillDTO[];
+  /** Aggregate mythic-boss count from raider.io, used only when raidKills is
+   * empty (most commonly: this character's Warcraft Logs are private - see
+   * RaidBossGrid's doc comment). No per-boss detail. */
+  raidProgressFallback?: { killed: number; total: number } | null;
 }
 
 /** One boss at the highest difficulty ever killed - no parse/percentile, just

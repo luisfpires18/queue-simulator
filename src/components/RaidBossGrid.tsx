@@ -28,7 +28,7 @@ function labelColor(difficulty: RaidKillDifficulty | null): string {
 }
 
 export function RaidBossGrid({
-  raidKills, defaultOpen = true, highlightRaidId, syncable = false,
+  raidKills, defaultOpen = true, highlightRaidId, syncable = false, raidProgressFallback = null,
 }: {
   raidKills: RaidKillDTO[];
   defaultOpen?: boolean;
@@ -37,11 +37,18 @@ export function RaidBossGrid({
    * actually exists - public/shared views (/u/..., /player/...) have no such
    * control, so their empty state shouldn't tell you to click one. */
   syncable?: boolean;
+  /** Aggregate mythic-boss count from raider.io, used only when `raidKills`
+   * is empty - most commonly because this character's Warcraft Logs are
+   * private (WCL's permission error gets swallowed upstream into an empty
+   * array, indistinguishable from "never raided"). No per-boss detail, so it
+   * can only replace the header summary, not the tile grid below it. */
+  raidProgressFallback?: { killed: number; total: number } | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const killByBoss = new Map(raidKills.map((k) => [`${k.raidId}:${k.bossId}`, k.difficulty]));
   const anyKills = raidKills.length > 0;
   const progress = raidMythicProgress(raidKills);
+  const usingFallback = !anyKills && raidProgressFallback != null;
 
   return (
     <div className="w-full pt-2 border-t border-panelborder/60">
@@ -49,10 +56,17 @@ export function RaidBossGrid({
         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
           Raid bosses
         </span>
-        {progress.total > 0 && (
+        {usingFallback ? (
           <span className="text-[10px] text-gray-500 tabular-nums">
-            {progress.abbrLabel} <span className="text-purple-400 font-bold">{progress.killed}/{progress.total} M</span>
+            <span className="text-purple-400 font-bold">{raidProgressFallback.killed}/{raidProgressFallback.total} M</span>
+            {" "}· via Raider.io
           </span>
+        ) : (
+          progress.total > 0 && (
+            <span className="text-[10px] text-gray-500 tabular-nums">
+              {progress.abbrLabel} <span className="text-purple-400 font-bold">{progress.killed}/{progress.total} M</span>
+            </span>
+          )
         )}
         <span className="ml-auto text-gray-500 text-xs">{open ? "▲" : "▼"}</span>
       </button>
@@ -61,7 +75,9 @@ export function RaidBossGrid({
         <div className="pt-2 space-y-3">
           {!anyKills ? (
             <p className="text-xs text-gray-600">
-              No logged kills yet{syncable ? " - hit ↻ Refresh above." : "."}
+              {usingFallback
+                ? "Per-boss detail unavailable - Warcraft Logs are private for this character."
+                : `No logged kills yet${syncable ? " - hit ↻ Refresh above." : "."}`}
             </p>
           ) : (
             RAIDS.map((raid) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CharacterCard, type CardCharacter, type CardSpecTrack } from "@/components/CharacterCard";
 
@@ -22,6 +22,19 @@ export function CharacterBoard({ initial }: { initial: Character[] }) {
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const router = useRouter();
+
+  // Native HTML5 drag-and-drop (the `draggable` attribute + dataTransfer)
+  // only works with a mouse - touch devices have no working implementation
+  // of it, so a touch-drag on a `draggable` element falls through to the
+  // OS's own generic drag gesture instead (confirmed live: dragging a
+  // character card on iOS Safari opened a Google search for the character's
+  // raw id, which is exactly the dataTransfer text/plain payload dragstart
+  // sets below). Disable draggable entirely on coarse-pointer (touch)
+  // devices - reordering just isn't available via drag there for now.
+  const [touchDevice, setTouchDevice] = useState(false);
+  useEffect(() => {
+    setTouchDevice(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   const grouped = useMemo(() => {
     const byBucket: Record<string, Character[]> = { main: [], alt: [], hidden: [] };
@@ -185,7 +198,7 @@ export function CharacterBoard({ initial }: { initial: Character[] }) {
                 <CharacterCard
                   key={c.id}
                   character={c}
-                  draggable
+                  draggable={!touchDevice}
                   dragging={dragId === c.id}
                   onDragStart={(e) => {
                     // Firefox (and some Chrome drop targets) won't complete a

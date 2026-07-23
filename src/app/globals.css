@@ -16,6 +16,16 @@ html, body {
 
 * { box-sizing: border-box; }
 
+/* iOS Safari auto-zooms the viewport on focusing any text input/select/
+   textarea whose computed font-size is under 16px - every input in this app
+   uses Tailwind's text-sm (14px). Force 16px on mobile widths only (desktop
+   untouched) rather than editing every input individually. */
+@media screen and (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #23272e; border-radius: 4px; }

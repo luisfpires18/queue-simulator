@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPublicCharacters } from "@/data/characters";
 import { fetchLivePlayerProfile } from "@/data/livePlayer";
 import { fetchCharacterTitles } from "@/data/blizzardApp";
+import { fetchRaidProgression } from "@/data/raiderio";
 import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
@@ -42,9 +43,19 @@ export default async function PlayerSearchResultPage({
 
   const registered = await getPublicCharacters(decodedRealmSlug, decodedName);
   if (registered) {
-    const byBucket: Record<string, typeof registered.characters> = { main: [], alt: [] };
-    for (const c of registered.characters) byBucket[c.bucket]?.push(c);
-    const mainChar = registered.characters.find((c) => c.isMain) ?? registered.characters[0] ?? null;
+    // Fallback only for characters WCL gave us nothing for (most commonly:
+    // their logs are private) - not a blanket extra API call per character.
+    const characters = await Promise.all(
+      registered.characters.map(async (c) => {
+        if (c.raidKills.length > 0) return c;
+        const raidProgressFallback = await fetchRaidProgression(c.region, c.realmSlug, c.name).catch(() => null);
+        return { ...c, raidProgressFallback };
+      })
+    );
+
+    const byBucket: Record<string, typeof characters> = { main: [], alt: [] };
+    for (const c of characters) byBucket[c.bucket]?.push(c);
+    const mainChar = characters.find((c) => c.isMain) ?? characters[0] ?? null;
     const displayName = registered.battletag?.split("#")[0] ?? mainChar?.name ?? "Player";
     const r1Titles = mainChar ? await fetchR1TitleCount(mainChar.region, mainChar.realmSlug, mainChar.name) : null;
 

@@ -168,3 +168,38 @@ export async function fetchRaiderIoRating(
 
   return { overallRating, ilvl, specScores, bestRunsBySpec, classId, faction, activeSpecId, realmName };
 }
+
+interface RaidProgressionEntry {
+  total_bosses?: number;
+  mythic_bosses_killed?: number;
+}
+
+/** Aggregate mythic raid-boss progress from raider.io's armory data - a
+ * fallback for when Warcraft Logs has nothing (most commonly: the
+ * character's WCL logs are set private, which WCL's API reports as a
+ * permission error that gets swallowed into an empty raidKills[] upstream,
+ * indistinguishable from "never raided"). Sourced from Blizzard's armory,
+ * not WCL, so it's unaffected by WCL privacy settings.
+ *
+ * Deliberately just sums raider.io's own per-raid totals as-is rather than
+ * reconciling against this app's hand-maintained RAIDS list (src/game/
+ * raidSeason.ts) - raider.io's raid-tier groupings don't map 1:1 onto ours
+ * (it tracks at least one raid ours doesn't have yet), and its own
+ * total_bosses is the more correct ground truth anyway. Returns null if the
+ * fetch fails or the character has no raid progress at all (nothing to show
+ * beats a misleading "0/0"). */
+export async function fetchRaidProgression(
+  region: string,
+  realmSlug: string,
+  name: string
+): Promise<{ killed: number; total: number } | null> {
+  const params = new URLSearchParams({ region, realm: realmSlug, name, fields: "raid_progression" });
+  const res = await fetch(`${API_HOST}/characters/profile?${params}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { raid_progression?: Record<string, RaidProgressionEntry> };
+  const entries = Object.values(data.raid_progression ?? {});
+  const total = entries.reduce((sum, e) => sum + (e.total_bosses ?? 0), 0);
+  if (total === 0) return null;
+  const killed = entries.reduce((sum, e) => sum + (e.mythic_bosses_killed ?? 0), 0);
+  return { killed, total };
+}

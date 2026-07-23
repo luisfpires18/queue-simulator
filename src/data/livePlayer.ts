@@ -5,7 +5,7 @@
 // /player/[region]/[realmSlug]/[name] when the character isn't a registered
 // account here (see getPublicCharacters in src/data/source.ts for the
 // DB-first path that's tried before this one).
-import { fetchRaiderIoRating } from "./raiderio";
+import { fetchRaiderIoRating, fetchRaidProgression } from "./raiderio";
 import { specById } from "@/game/classes";
 import { fetchLiveRaidKills } from "@/server/wcl/liveRaidKills";
 import type { RosterCharacterDTO, SpecTrackDTO } from "./dto";
@@ -38,6 +38,11 @@ export async function fetchLivePlayerProfile(
   // Best-effort - a WCL hiccup or a character with no logs at all shouldn't
   // fail the whole live snapshot, it should just show an empty raid section.
   const raidKills = await fetchLiveRaidKills({ name, realmSlug, region }).catch(() => []);
+  // Fallback only when WCL gave us nothing - most commonly private logs
+  // (see RaidBossGrid's doc comment). Skip the extra API call otherwise.
+  const raidProgressFallback = raidKills.length === 0
+    ? await fetchRaidProgression(region, realmSlug, name).catch(() => null)
+    : null;
 
   return {
     id,
@@ -56,6 +61,7 @@ export async function fetchLivePlayerProfile(
     sortOrder: 0,
     wclZone: null,
     raidKills,
+    raidProgressFallback,
     specTracks,
   };
 }

@@ -1,4 +1,4 @@
-import { auth, signIn, signOut, bnetEnabled } from "@/auth";
+import { auth, signOut, bnetEnabled } from "@/auth";
 import Link from "next/link";
 
 // Server component: shows BattleTag + logout when signed in, else a Battle.net login button.
@@ -39,15 +39,8 @@ export async function HeaderAuth() {
   }
 
   return (
-    <form
-      action={async () => {
-        "use server";
-        await signIn("battlenet", { redirectTo: "/profile" });
-      }}
-    >
-      <button className="btn bg-[#00aeff] text-black hover:brightness-110 px-3 py-1.5 text-xs">
-        Login with Battle.net
-      </button>
-    </form>
+    <Link href="/login" className="btn bg-[#00aeff] text-black hover:brightness-110 px-3 py-1.5 text-xs">
+      Login with Battle.net
+    </Link>
   );
 }

@@ -56,6 +56,15 @@ export function CurrentCharacterPicker({
     return seen;
   }, [characters]);
 
+  // Same character name can exist on different realms - without this, two
+  // "Unreally" buttons side by side are indistinguishable (confirmed live:
+  // this account has one on each of two realms).
+  const duplicateNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of characters) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+    return new Set([...counts].filter(([, n]) => n > 1).map(([name]) => name));
+  }, [characters]);
+
   const charsOfClass = characters.filter((c) => c.classId === classId);
   const owner = characters.find((c) => c.id === charId) ?? characters[0];
   const ownerClass = CLASS_BY_ID[classId as ClassId] ?? (owner && classById(owner.classId));
@@ -117,11 +126,15 @@ export function CurrentCharacterPicker({
         className="chip bg-panel2 border border-panelborder text-gray-200 hover:border-accent/50 flex items-center gap-1.5"
       >
         <SpecIcon specId={confirmedSpecId} size={20} showRole={false} />
-        <span className="hidden sm:inline">{confirmedCharacter?.name}</span>
+        {/* Always visible - this is the only place this component ever
+            renders below the sm: breakpoint (inside MobileNavDrawer, which
+            only shows there), so a name hidden below sm: meant it never
+            showed on mobile at all, just a bare icon. */}
+        <span>{confirmedCharacter?.name}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 z-30 w-72 panel p-3 shadow-card space-y-3">
+        <div className="absolute right-0 mt-2 z-30 w-72 max-w-[calc(100vw-2rem)] panel p-3 shadow-card space-y-3">
           <div className="text-[10px] uppercase tracking-wide text-gray-500">Current character</div>
 
           <div className="flex flex-wrap gap-1.5">
@@ -150,6 +163,7 @@ export function CurrentCharacterPicker({
                   )}
                 >
                   {c.name}
+                  {duplicateNames.has(c.name) && <span className="text-gray-500"> · {c.realm}</span>}
                 </button>
               ))}
             </div>

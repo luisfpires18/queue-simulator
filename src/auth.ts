@@ -70,6 +70,7 @@ const devLogin: NextAuthConfig["providers"][number] = Credentials({
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   debug: process.env.NODE_ENV === "development",
+  pages: { signIn: "/login" },
   providers: [...(bnetEnabled ? [battlenet] : []), ...(devLoginEnabled ? [devLogin] : [])],
   callbacks: {
     // Persist BattleTag + Blizzard access token + account id so we can call the

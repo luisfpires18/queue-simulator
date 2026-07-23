@@ -1,4 +1,5 @@
-import { auth, signIn, bnetEnabled, devLoginEnabled } from "@/auth";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { ensureUser } from "@/data/users";
 import { getUserCharacters, getSpecTracks } from "@/data/characters";
 import { ProfileClient } from "@/components/profile/ProfileClient";
@@ -13,32 +14,8 @@ export default async function ProfilePage() {
 
   // Checking bnetId, not just user - a session can carry a `user` object
   // with no bnetId (stale cookie predating this field); ensureUser(bnetId!,
-  // ...) below would otherwise crash instead of showing the login prompt.
-  if (!s?.user || !s?.bnetId) {
-    return (
-      <div className="max-w-xl mx-auto panel p-8 text-center space-y-4">
-        <h1 className="text-2xl font-black">Your Profile</h1>
-        <p className="text-gray-400">Log in with Battle.net to sync your WoW characters.</p>
-        {bnetEnabled ? (
-          <form action={async () => { "use server"; await signIn("battlenet", { redirectTo: "/profile" }); }}>
-            <button className="btn bg-[#00aeff] text-black hover:brightness-110">Login with Battle.net</button>
-          </form>
-        ) : (
-          <p className="text-amber-400 text-sm">Battle.net login needs credentials (see .env).</p>
-        )}
-        {devLoginEnabled && (
-          <form
-            action={async () => { "use server"; await signIn("dev-login", { bnetId: "dev-fake-1", redirectTo: "/profile" }); }}
-            className="pt-3 border-t border-panelborder/60"
-          >
-            <button className="btn-ghost text-xs px-3 py-1.5">
-              Dev login as TestHero#1111 (fake, seeded, ALLOW_DEV_LOGIN=1)
-            </button>
-          </form>
-        )}
-      </div>
-    );
-  }
+  // ...) below would otherwise crash instead of just bouncing to login.
+  if (!s?.user || !s?.bnetId) redirect("/login");
 
   const user = await ensureUser(s.bnetId!, s.battletag);
   const characters = await getUserCharacters(user.id);

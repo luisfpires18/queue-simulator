@@ -33,6 +33,8 @@ export interface CardCharacter {
   bucket: string;
   specTracks: CardSpecTrack[];
   raidKills: RaidKillDTO[];
+  /** See RaidBossGrid's own doc comment - only used when raidKills is empty. */
+  raidProgressFallback?: { killed: number; total: number } | null;
 }
 
 /**
@@ -193,7 +195,7 @@ export function CharacterCard({
       </div>
 
       <DungeonGrid classId={c.classId} specTracks={c.specTracks} defaultOpen={dungeonsDefaultOpen} />
-      <RaidBossGrid raidKills={c.raidKills} syncable={Boolean(onRefresh)} />
+      <RaidBossGrid raidKills={c.raidKills} syncable={Boolean(onRefresh)} raidProgressFallback={c.raidProgressFallback} />
     </div>
   );
 }

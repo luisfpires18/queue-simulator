@@ -45,7 +45,7 @@ export async function sendChatGroupMessage(chatGroupId: string, senderId: string
   ]);
   const message = chatGroupMessageDTO(row, senderIdentity);
 
-  const senderName = senderIdentity.characterName ?? senderIdentity.battletag ?? "Someone";
+  const senderName = senderIdentity.battletag ?? senderIdentity.characterName ?? "Someone";
   for (const m of group?.members ?? []) {
     if (m.userId === senderId) continue;
     notifyUser(m.userId, {

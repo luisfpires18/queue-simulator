@@ -80,7 +80,7 @@ function ThreadHeaderInfo({ thread }: { thread: ChatThreadId }) {
   if (thread.kind === "dm") {
     const friend = friends?.find((f) => f.userId === thread.userId);
     const identity = friend?.identity ?? EMPTY_IDENTITY;
-    const label = identity.characterName ?? identity.battletag?.split("#")[0] ?? "Player";
+    const label = identity.battletag ?? identity.characterName ?? "Player";
     const cls = identity.classId ? classById(identity.classId) : undefined;
     return (
       <>
@@ -195,7 +195,7 @@ function FullscreenChat({ thread }: { thread: ChatThreadId }) {
     <div className="fixed inset-0 z-50 bg-panel flex flex-col">
       <div className="flex items-center gap-3 px-4 h-14 border-b border-panelborder shrink-0">
         {thread.kind === "dm" ? (
-          <IdentityBadge identity={friend?.identity ?? EMPTY_IDENTITY} size={32} />
+          <IdentityBadge identity={friend?.identity ?? EMPTY_IDENTITY} size={32} preferBattletag />
         ) : (
           <div className="flex items-center gap-2 min-w-0">
             <ThreadHeaderInfo thread={thread} />

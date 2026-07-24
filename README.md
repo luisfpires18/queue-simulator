@@ -132,9 +132,13 @@ resets on every deploy or misbehaves under load:
    `/home/site/wwwroot` (where the repo's code lands) wholesale - if `DATABASE_URL` still points at
    `prisma/dev.db` inside that folder, each deploy wipes the database. Instead point it at Azure's
    persistent `/home` mount, which survives both restarts and redeploys:
-   `DATABASE_URL="file:/home/data/prod.db"` (Application Settings - see step 2 below). Create the
-   file once by running `npx prisma db push` locally against that same path over SSH (*App Service
-   → SSH*, in the portal) after the first deploy, or just let the app create it on first write.
+   `DATABASE_URL="file:/home/data/prod.db"` (Application Settings - see step 2 below). The file and
+   its schema are created/synced automatically - `npm start` (`package.json`) runs
+   `prisma db push --skip-generate` before `next start` on every boot, so a schema change that
+   lands in `prisma/schema.prisma` takes effect on the next restart with no manual SSH step. This
+   repo has no migration history, so `db push` (not `migrate deploy`) is the right tool here - it
+   applies additive changes automatically and non-interactively refuses (rather than silently
+   dropping data) if a change it's about to make would be destructive.
 2. **Known risk: `/home` is network storage (Azure Files/SMB), not local disk.** SQLite's file
    locking wasn't designed for network file shares, and this is a well-known source of intermittent
    `SQLITE_BUSY` / "database is locked" errors under concurrent writes, even from a single app

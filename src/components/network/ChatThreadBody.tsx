@@ -48,7 +48,7 @@ export function ChatThreadBody({
       ? (dmQuery.data ?? []).map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, createdAt: m.createdAt }))
       : (groupQuery.data ?? []).map((m) => ({
           id: m.id, senderId: m.senderId, body: m.body, createdAt: m.createdAt,
-          senderName: m.senderIdentity.characterName ?? m.senderIdentity.battletag?.split("#")[0] ?? "Player",
+          senderName: m.senderIdentity.battletag ?? m.senderIdentity.characterName ?? "Player",
         }));
 
   const key = threadKey(thread);

@@ -46,7 +46,7 @@ export async function sendMessage(senderId: string, recipientId: string, body: s
 
   const senderIdentity = await getDisplayIdentity(senderId);
   notifyUser(recipientId, {
-    title: senderIdentity.characterName ?? senderIdentity.battletag ?? "New message",
+    title: senderIdentity.battletag ?? senderIdentity.characterName ?? "New message",
     body: trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed,
     url: `/network/${senderId}`,
   }).catch((err) => console.error("notifyUser message failed", err));

@@ -26,7 +26,7 @@ export function ChatClient({
     >
       <div className="flex items-center gap-3 pb-3 border-b border-panelborder shrink-0">
         <Link href="/network" className="text-gray-500 hover:text-white text-sm">← Network</Link>
-        <IdentityBadge identity={identity} size={32} />
+        <IdentityBadge identity={identity} size={32} preferBattletag />
       </div>
       <ChatThreadBody thread={{ kind: "dm", userId: friendUserId }} initialDmMessages={initialMessages} />
     </div>

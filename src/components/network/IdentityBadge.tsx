@@ -7,9 +7,19 @@ import type { DisplayIdentityDTO } from "@/data/dto";
 /** A friend/request row's "who is this" — class icon (or a battletag-initial
  * fallback if they have no characters synced yet) + name, linking to their
  * public profile when one exists. Shared by the Network page, request rows,
- * and the chat header so identity always renders the same way. */
-export function IdentityBadge({ identity, size = 36 }: { identity: DisplayIdentityDTO; size?: number }) {
-  const label = identity.characterName ?? identity.battletag?.split("#")[0] ?? "Unknown player";
+ * and the chat header so identity always renders the same way.
+ *
+ * preferBattletag: for messaging surfaces, where the label needs to stay
+ * stable no matter which character the other person currently has selected
+ * as main - characterName is a live lookup, not stored per-message, so it
+ * can silently change out from under an open thread. Battletag never does;
+ * the class icon still follows their main character, that part's harmless. */
+export function IdentityBadge({
+  identity, size = 36, preferBattletag = false,
+}: { identity: DisplayIdentityDTO; size?: number; preferBattletag?: boolean }) {
+  const label = preferBattletag
+    ? identity.battletag ?? identity.characterName ?? "Unknown player"
+    : identity.characterName ?? identity.battletag?.split("#")[0] ?? "Unknown player";
   const sub = identity.characterRealm ?? null;
 
   const avatar = (

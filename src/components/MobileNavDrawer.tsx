@@ -57,7 +57,8 @@ export function MobileNavDrawer({ children }: { children: React.ReactNode }) {
               style={{ paddingTop: "env(safe-area-inset-top)" }}
             >
               <div className="h-14 px-4 flex items-center justify-between border-b border-panelborder">
-                <span className="font-black tracking-tight text-[15px] uppercase">
+                <span className="flex items-center gap-2 font-black tracking-tight text-[15px] uppercase">
+                  <img src="/icons/icon-192.png" alt="" width={24} height={24} className="shrink-0" />
                   <span className="text-accent">Queue</span> Simulator
                 </span>
                 <button

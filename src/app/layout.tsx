@@ -71,7 +71,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Providers currentUserId={currentUserId}>
           <header className="sticky top-0 z-30 bg-panel/80 backdrop-blur border-b border-panelborder" style={{ paddingTop: "env(safe-area-inset-top)" }}>
             <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-1">
-              <Link href="/" className="mr-6 font-black tracking-tight text-[15px] uppercase">
+              <Link href="/" className="mr-6 flex items-center gap-2 font-black tracking-tight text-[15px] uppercase">
+                <img src="/icons/icon-192.png" alt="" width={24} height={24} className="shrink-0" />
                 <span className="text-accent">Queue</span> Simulator
               </Link>
 

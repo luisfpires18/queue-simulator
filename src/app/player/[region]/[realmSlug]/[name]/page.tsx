@@ -7,6 +7,7 @@ import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
 import { bestSpecFor } from "@/game/roster";
+import { highestCharacterRating } from "@/game/rating";
 
 // Titles are account-wide, so one character's title list already reflects
 // the whole account - no need to fetch per character on a multi-alt roster.
@@ -68,7 +69,8 @@ export default async function PlayerSearchResultPage({
             memberSince={registered.memberSince}
             characterCount={registered.characters.length}
             country={registered.country}
-            main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null, rating: mainChar.rating }}
+            main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null }}
+            highestRating={highestCharacterRating(characters)}
             r1Titles={r1Titles}
           />
         )}
@@ -109,7 +111,8 @@ export default async function PlayerSearchResultPage({
         battletag={null}
         memberSince={null}
         characterCount={null}
-        main={{ name: live.name, classId: live.classId, specId: live.specId, rating: live.rating }}
+        main={{ name: live.name, classId: live.classId, specId: live.specId }}
+        highestRating={live.rating}
         r1Titles={liveR1Titles}
         live
       />

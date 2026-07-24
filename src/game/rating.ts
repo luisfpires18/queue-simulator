@@ -45,3 +45,13 @@ export function rankScoreFor<T extends ScoredSpecTrack>(
   }
   return { score: appliedScore, rankedByMain: false };
 }
+
+/** MAX(rating) across a whole roster, ignoring characters with no rating yet
+ * - the profile header's "Highest Rating" stat, independent of which
+ * character is flagged as main. Null if nobody on the roster has one. */
+export function highestCharacterRating<T extends { rating: number | null }>(characters: T[]): number | null {
+  return characters.reduce<number | null>(
+    (best, c) => (c.rating != null && (best == null || c.rating > best) ? c.rating : best),
+    null
+  );
+}

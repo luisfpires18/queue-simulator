@@ -47,12 +47,15 @@ const battlenet: NextAuthConfig["providers"][number] = {
 // Dev-only login bypass — lets you sign in as a seeded fake user (see
 // prisma/seed.ts) without a real Battle.net account. Real Battle.net OAuth
 // can never authenticate a fake account, so this is the only way to exercise
-// logged-in flows with test data. Two hard gates keep this out of prod:
-// (1) ALLOW_DEV_LOGIN must be explicitly "1" (not just NODE_ENV, which can be
-// misconfigured), and (2) authorize() only ever accepts bnetIds that already
-// exist in the DB AND start with "dev-fake-" — never an arbitrary or real id,
-// so flipping the flag on by accident can't be used to impersonate a real user.
-export const devLoginEnabled = process.env.ALLOW_DEV_LOGIN === "1";
+// logged-in flows with test data. Three hard gates keep this out of prod:
+// (1) ALLOW_DEV_LOGIN must be explicitly "1" (not on by default even in dev),
+// (2) NODE_ENV can't be "production" - `next build && next start` (how Azure
+// runs this app, see README) always sets it, so a stray ALLOW_DEV_LOGIN=1 left
+// in prod app settings still can't turn this on, and (3) authorize() only
+// ever accepts bnetIds that already exist in the DB AND start with
+// "dev-fake-" - never an arbitrary or real id, so flipping the flag on by
+// accident still can't be used to impersonate a real user.
+export const devLoginEnabled = process.env.NODE_ENV !== "production" && process.env.ALLOW_DEV_LOGIN === "1";
 
 const devLogin: NextAuthConfig["providers"][number] = Credentials({
   id: "dev-login",

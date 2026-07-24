@@ -111,7 +111,7 @@ export function GroupDetailsModal({
               {start.urgent && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1" />}
               {start.label}
             </span>
-            <CountdownLight startsAt={group.startsAt} />
+            <CountdownLight startsAt={group.startsAt} createdAt={group.createdAt} />
             {owner && (
               <span className="text-[11px] text-gray-500">
                 Led by <span className="text-gray-300 font-semibold">{owner.name}</span>

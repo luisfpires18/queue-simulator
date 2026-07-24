@@ -2,11 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Overpass } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import { SEASON } from "@/game/season";
-import { HeaderAuth } from "@/components/HeaderAuth";
-import { CurrentCharacterNav } from "@/components/CurrentCharacterNav";
+import { AccountMenu } from "@/components/AccountMenu";
 import { SwRegister } from "@/components/SwRegister";
 import { auth } from "@/auth";
+import { ensureUser } from "@/data/users";
 import { isAdminBattletag } from "@/lib/admin";
 import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import Link from "next/link";
@@ -39,6 +38,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#0a0b0d",
   viewportFit: "cover",
+  // Without this, iOS/Android leave the layout viewport alone when the
+  // on-screen keyboard opens and just shrink the visual viewport instead —
+  // any 100vh/100dvh-sized fixed layout (the chat thread, its input bar)
+  // ends up partly hidden behind the keyboard. "resizes-content" makes the
+  // layout viewport itself shrink, so dvh-based heights stay correct.
+  interactiveWidget: "resizes-content",
 };
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
@@ -54,12 +59,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
   const loggedIn = Boolean(s?.user && s?.bnetId);
   const isAdmin = isAdminBattletag(s?.battletag);
+  // Group chat bubbles need "is this message mine" against potentially many
+  // senders (see ChatDockContext) — resolved once here, same ensureUser call
+  // AccountMenu makes independently for its own data.
+  const currentUserId = loggedIn ? (await ensureUser(s!.bnetId!, s!.battletag)).id : undefined;
 
   return (
     <html lang="en" className={overpass.variable}>
       <body className="antialiased" suppressHydrationWarning>
         <SwRegister />
-        <Providers>
+        <Providers currentUserId={currentUserId}>
           <header className="sticky top-0 z-30 bg-panel/80 backdrop-blur border-b border-panelborder" style={{ paddingTop: "env(safe-area-inset-top)" }}>
             <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-1">
               <Link href="/" className="mr-6 font-black tracking-tight text-[15px] uppercase">
@@ -78,11 +87,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     Admin
                   </Link>
                 )}
-                <span className="text-[11px] uppercase tracking-widest text-gray-500 hidden md:block">
-                  {SEASON.expansion} · S{SEASON.season}
-                </span>
-                <CurrentCharacterNav />
-                <HeaderAuth />
+                <AccountMenu />
               </div>
 
               {/* Mobile: everything above collapses behind a hamburger + slide-in drawer. */}
@@ -95,14 +100,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     {isAdmin && <NavLink href="/admin">Admin</NavLink>}
                   </div>
                   <div className="pt-3 mt-1 border-t border-panelborder space-y-3">
-                    <span className="block text-[11px] uppercase tracking-widest text-gray-500 px-3">
-                      {SEASON.expansion} · S{SEASON.season}
-                    </span>
                     <div className="px-3">
-                      <CurrentCharacterNav />
-                    </div>
-                    <div className="px-3">
-                      <HeaderAuth />
+                      <AccountMenu />
                     </div>
                   </div>
                 </MobileNavDrawer>

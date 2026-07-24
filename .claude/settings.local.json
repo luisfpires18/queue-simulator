@@ -6,7 +6,25 @@
       "PowerShell(npx tsc --noEmit)",
       "PowerShell(npm test 2>&1)",
       "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped orphan dev server\" } else { \"port 3200 free\" })",
-      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped\" } else { \"already free\" })"
+      "PowerShell($conns = Get-NetTCPConnection -LocalPort 3200 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -Confirm:$false }; \"stopped\" } else { \"already free\" })",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./package.json'\\).scripts, null, 2\\)\\); console.log\\(JSON.stringify\\(require\\('./package.json'\\).dependencies, null, 2\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.devDependencies,null,2\\)\\)\")",
+      "Bash(node -p \"require\\('./package.json'\\).dependencies.next\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'queue_simulator' } | Select-Object ProcessId, CommandLine)",
+      "PowerShell(Stop-Process -Id 22280,9628 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 22280,9628 -ErrorAction SilentlyContinue)",
+      "Bash(git log *)",
+      "PowerShell(Stop-Process -Id 3200,6256 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 3200,6256 -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 19232,11920 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 19232,11920 -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 22216,12664 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 22216,12664 -ErrorAction SilentlyContinue)",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "PowerShell(Stop-Process -Id 4508,8280 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 4508,8280 -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 13620,18196 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 13620,18196 -ErrorAction SilentlyContinue)"
     ]
   }
 }

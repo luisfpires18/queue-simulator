@@ -28,7 +28,10 @@ export async function getUserCharacters(userId: string): Promise<CharacterDTO[]>
 export async function getPublicCharacters(
   realmSlug: string,
   name: string
-): Promise<{ battletag: string | null; country: string | null; memberSince: string; characters: RosterCharacterDTO[] } | null> {
+): Promise<{
+  userId: string; battletag: string | null; country: string | null; discord: string | null; twitch: string | null;
+  memberSince: string; characters: RosterCharacterDTO[];
+} | null> {
   const owner = await prisma.character.findFirst({ where: { realmSlug, name }, include: { user: true } });
   if (!owner) return null;
   const chars = await prisma.character.findMany({
@@ -39,8 +42,11 @@ export async function getPublicCharacters(
   const tracksByChar = await getSpecTracksByCharacter(sorted.map((c) => c.id));
   const characters = sorted.map((c) => ({ ...c, specTracks: tracksByChar.get(c.id) ?? [] }));
   return {
+    userId: owner.userId,
     battletag: owner.user.showBattletag ? owner.user.battletag : null,
     country: owner.user.country,
+    discord: owner.user.discord,
+    twitch: owner.user.twitch,
     memberSince: owner.user.createdAt.toISOString(),
     characters,
   };

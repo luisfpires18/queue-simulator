@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CharacterBoard } from "./CharacterBoard";
 import { NotificationsTab } from "./NotificationsTab";
 import { SettingsTab } from "./SettingsTab";
+import { SeasonSnapshotGrid } from "./SeasonSnapshotGrid";
 import { WowIcon } from "@/components/WowIcon";
 import { MISC_ICON } from "@/game/icons";
 import type { RaidKillDTO } from "@/data/dto";
@@ -35,11 +36,15 @@ interface Character {
   raidKills: RaidKillDTO[];
 }
 
-export function ProfileClient({ initial }: { initial: Character[] }) {
+export function ProfileClient({ initial, currentSeasonId }: { initial: Character[]; currentSeasonId: string }) {
   const [tab, setTab] = useState<"characters" | "notifications" | "settings">("characters");
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
+  // Shared with SeasonSelector (a sibling under the server page, see
+  // /profile/page.tsx) via the URL rather than a prop - absent means "live".
+  const selectedSeasonId = useSearchParams().get("season") ?? currentSeasonId;
+  const viewingPastSeason = selectedSeasonId !== currentSeasonId;
 
   const sync = async () => {
     setSyncing(true);
@@ -83,17 +88,17 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        {tab === "characters" && (
+        {initial.length > 0 && (
+          <Link
+            href={`/u/${encodeURIComponent((initial.find((c) => c.isMain) ?? initial[0]).realmSlug)}/${encodeURIComponent((initial.find((c) => c.isMain) ?? initial[0]).name)}`}
+            className="btn-ghost text-xs px-2 py-1"
+            target="_blank"
+          >
+            View public profile ↗
+          </Link>
+        )}
+        {tab === "characters" && !viewingPastSeason && (
           <>
-            {initial.length > 0 && (
-              <Link
-                href={`/u/${encodeURIComponent((initial.find((c) => c.isMain) ?? initial[0]).realmSlug)}/${encodeURIComponent((initial.find((c) => c.isMain) ?? initial[0]).name)}`}
-                className="btn-ghost text-xs px-2 py-1"
-                target="_blank"
-              >
-                View public profile ↗
-              </Link>
-            )}
             <button onClick={sync} disabled={syncing} className="btn-gold ml-auto">
               {syncing ? "Syncing…" : "Sync characters"}
             </button>
@@ -103,7 +108,9 @@ export function ProfileClient({ initial }: { initial: Character[] }) {
       </div>
 
       {tab === "characters" ? (
-        initial.length === 0 ? (
+        viewingPastSeason ? (
+          <SeasonSnapshotGrid seasonId={selectedSeasonId} />
+        ) : initial.length === 0 ? (
           <div className="panel p-10 text-center text-gray-500">No characters yet. Hit "Sync characters".</div>
         ) : (
           <CharacterBoard initial={initial} />

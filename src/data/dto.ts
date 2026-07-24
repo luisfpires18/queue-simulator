@@ -199,6 +199,97 @@ export type AcceptApplicationResult =
   | { ok: false; reason: "conflict"; conflictTitle: string }
   | { ok: false; reason: "below_requirement"; requiredRating: number };
 
+/** A user's "who they are" on a friend card — derived from their main (or
+ * first) character, since this app has no usernames. Null fields mean the
+ * user has no characters synced yet. */
+export interface DisplayIdentityDTO {
+  battletag: string | null;
+  characterName: string | null;
+  characterRealm: string | null;
+  characterRealmSlug: string | null;
+  region: string | null;
+  classId: string | null;
+  level: number | null;
+  faction: string | null;
+}
+
+export type FriendshipStatus = "none" | "friends" | "pending_outgoing" | "pending_incoming";
+
+export interface FriendRequestDTO {
+  id: string;
+  requesterUserId: string;
+  addresseeUserId: string;
+  status: string; // pending | accepted | declined
+  createdAt: string;
+  requester: DisplayIdentityDTO;
+  addressee: DisplayIdentityDTO;
+}
+
+export type SendFriendRequestResult =
+  | { ok: true; request: FriendRequestDTO }
+  | { ok: false; reason: "self" | "already_friends" | "already_pending" };
+
+/** One row of the caller's friends list — `userId` is the OTHER person. */
+export interface FriendDTO {
+  userId: string;
+  friendRequestId: string;
+  since: string;
+  identity: DisplayIdentityDTO;
+  unreadCount: number;
+  /** Whether this friend has an open Network SSE connection right now — see
+   * networkBroadcaster.isOnline. A per-process presence signal, not a durable
+   * "last seen" record. */
+  online: boolean;
+}
+
+export interface MessageDTO {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface ChatGroupMemberDTO {
+  userId: string;
+  identity: DisplayIdentityDTO;
+  isOwner: boolean;
+  joinedAt: string;
+  /** Relative to the VIEWER (not the owner) — drives the "Add Friend"
+   * affordance for co-members who aren't mutual friends yet. */
+  friendshipStatus: FriendshipStatus;
+}
+
+export interface ChatGroupSummaryDTO {
+  id: string;
+  name: string;
+  ownerUserId: string;
+  memberCount: number;
+  unreadCount: number;
+  lastMessage: { body: string; senderId: string; createdAt: string } | null;
+}
+
+export interface ChatGroupDTO extends ChatGroupSummaryDTO {
+  members: ChatGroupMemberDTO[];
+  isOwner: boolean;
+}
+
+export interface ChatGroupMessageDTO {
+  id: string;
+  chatGroupId: string;
+  senderId: string;
+  senderIdentity: DisplayIdentityDTO;
+  body: string;
+  createdAt: string;
+}
+
+export type CreateChatGroupResult =
+  | { ok: true; group: ChatGroupDTO }
+  | { ok: false; reason: "not_friends" | "empty_name" | "no_members" | "too_many_members" };
+
+export type ChatGroupActionResult = { ok: true } | { ok: false; reason: "not_owner" | "not_friends" | "not_found" };
+
 export interface SoloQueueStatusDTO {
   status: "idle" | "queued" | "matched";
   groupId: string | null;
@@ -213,4 +304,22 @@ export interface JoinSoloQueueInput {
   minKeyLevel?: number | null;
   maxKeyLevel?: number | null;
   dungeonIds?: string[];
+}
+
+/** A currently-live Twitch stream, for the public profile's preview card
+ * (see src/data/twitch.ts). Null (not this type) means offline/unconfigured/
+ * lookup failed - the profile just falls back to a plain link either way. */
+export interface TwitchLiveInfoDTO {
+  title: string;
+  viewerCount: number;
+  thumbnailUrl: string;
+}
+
+/** One row of the admin Feature Flags panel — registry metadata (label/
+ * description) merged with the flag's current on/off state. */
+export interface FeatureFlagStateDTO {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
 }

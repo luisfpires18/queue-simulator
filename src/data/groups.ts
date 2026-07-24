@@ -111,6 +111,31 @@ export async function deleteGroup(id: string, ownerUserId: string): Promise<bool
   return true;
 }
 
+// ---- Expiry sweep ----
+// See src/server/groups/expirySweeper.ts for the hourly ticker that calls
+// expireStaleGroups(). "Expired" is the same definition CountdownLight
+// already shows on the card (startsAt has passed) plus a grace window, since
+// a leader might still be mid-run a bit after the posted time.
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+/** Pure so it's unit-testable without a DB (see src/data/groups.test.ts). */
+export function isExpired(startsAt: Date | null, now: Date, graceMs: number): boolean {
+  if (!startsAt) return false; // "Forming now" listings have no time reference - never swept
+  return startsAt.getTime() + graceMs < now.getTime();
+}
+
+/** Soft-delists every listing whose startsAt + grace has passed - same
+ * status: "delisted" deleteGroup() uses, so it vanishes from the board
+ * exactly like a manual delist (within one SSE tick), history intact.
+ * Returns the count swept. */
+export async function expireStaleGroups(graceMs = TWO_HOURS_MS): Promise<number> {
+  const { count } = await prisma.group.updateMany({
+    where: { status: { not: "delisted" }, startsAt: { not: null, lt: new Date(Date.now() - graceMs) } },
+    data: { status: "delisted" },
+  });
+  return count;
+}
+
 // ---- Scheduling conflicts ----
 // You can only be actively signed up for one key/raid at a time - see
 // startsConflict in src/game/scheduling.ts. "Active" = you own the listing,

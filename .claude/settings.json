@@ -10,7 +10,8 @@
       "PowerShell(node \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Workspace-queue-simulator\\\\3d8b5dde-2789-44f9-9a22-c74f6919ab35\\\\scratchpad\\\\migrate-imports.js\")",
       "PowerShell(npm run build 2>&1)",
       "PowerShell(npm run dev)",
-      "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>&1; echo ok)"
+      "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>&1; echo ok)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'queue_simulator' } | Select-Object ProcessId, CommandLine)"
     ],
     "additionalDirectories": [
       "d:\\Workspace\\queue_simulator\\src\\app\\player\\[region]\\[realmSlug]",

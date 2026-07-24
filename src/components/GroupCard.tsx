@@ -238,24 +238,24 @@ function GroupCardInner({
       )}
 
       {/* header */}
-      <div className="flex items-center gap-2 pr-16">
-        {isRaid ? (
-          <>
-            {raid?.icon && <WowIcon slug={raid.icon} size={22} cdnSize="medium" rounded="sm" />}
-            <span className="text-accent font-black text-xs uppercase tracking-wide">
-              {group.raidDifficulty ? RAID_DIFFICULTY_LABEL[group.raidDifficulty as RaidDifficulty] : ""}
-            </span>
-            <span className="font-bold truncate">{raid?.name ?? group.raidId}</span>
-            <span className="text-[11px] text-gray-500 tabular-nums">{group.members.length}/{group.raidSize}</span>
-          </>
-        ) : (
-          <>
-            <WowIcon slug={dungeon?.icon ?? MISC_ICON.keystone} size={22} cdnSize="medium" rounded="sm" />
-            <span className="text-accent font-black text-lg tabular-nums">+{group.keyLevel}</span>
-            <span className="font-bold truncate">{dungeon?.name ?? group.dungeonId}</span>
-          </>
-        )}
-      </div>
+      {isRaid ? (
+        <div className="flex items-center gap-2 pr-16">
+          {raid?.icon && <WowIcon slug={raid.icon} size={22} cdnSize="medium" rounded="sm" />}
+          <span className="text-accent font-black text-xs uppercase tracking-wide">
+            {group.raidDifficulty ? RAID_DIFFICULTY_LABEL[group.raidDifficulty as RaidDifficulty] : ""}
+          </span>
+          <span className="font-bold truncate">{raid?.name ?? group.raidId}</span>
+          <span className="text-[11px] text-gray-500 tabular-nums">{group.members.length}/{group.raidSize}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 pr-16">
+          <WowIcon slug={dungeon?.icon ?? MISC_ICON.keystone} size={48} cdnSize="large" rounded="md" className="shrink-0 ring-1 ring-panelborder" />
+          <div className="min-w-0">
+            <div className="text-accent font-black text-xl leading-none tabular-nums">+{group.keyLevel}</div>
+            <div className="font-bold text-sm truncate mt-1">{dungeon?.name ?? group.dungeonId}</div>
+          </div>
+        </div>
+      )}
       {group.description && <p className="text-xs text-gray-400 -mt-1">{group.description}</p>}
 
       {/* slots */}
@@ -272,7 +272,7 @@ function GroupCardInner({
       {/* start time */}
       <div className="flex items-center gap-2 flex-wrap border-t border-panelborder pt-2 text-sm">
         <span className="font-semibold text-accent">{startInfo(group.startsAt).label}</span>
-        <CountdownLight startsAt={group.startsAt} />
+        <CountdownLight startsAt={group.startsAt} createdAt={group.createdAt} />
         {requirementLabel && (
           <span className="chip border border-panelborder text-gray-400" title="Applicant requirement (advisory only)">
             {requirementLabel}

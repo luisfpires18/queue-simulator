@@ -139,7 +139,7 @@ export function ListKeyForm({
           </div>
         </Field>
 
-        <Field label="Description (optional)">
+        <Field label="Description">
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -188,7 +188,7 @@ export function ListKeyForm({
           />
         </Field>
 
-        <Field label="Applicant requirement (optional)">
+        <Field label="Applicant requirement">
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
               {(["none", "rating", "resilient", "custom"] as const).map((mode) => (

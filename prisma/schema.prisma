@@ -15,8 +15,12 @@ model User {
   createdAt DateTime @default(now())
 
   // Public-profile visibility controls, editable from the Settings tab.
-  showBattletag Boolean @default(true)
+  // Opt-in, not opt-out - a battletag is a real identifier, so it stays
+  // hidden until the user actively turns it on.
+  showBattletag Boolean @default(false)
   country       String? // ISO 3166-1 alpha-2, e.g. "ES" — see src/game/countries.ts
+  discord       String? // handle only (e.g. "name#0001" or "@name") - display text, not a link
+  twitch        String? // channel login (e.g. "twitch.tv/<this>") - see src/data/twitch.ts for live-status lookup
 
   // Global "current character" for List-a-key / Apply, set from the navbar
   // picker. Not a Prisma @relation — getCurrentSelection() in src/data/source.ts
@@ -32,6 +36,15 @@ model User {
 
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
+
+  sentFriendRequests     FriendRequest[] @relation("FriendRequestsSent")
+  receivedFriendRequests FriendRequest[] @relation("FriendRequestsReceived")
+  sentMessages           Message[]       @relation("MessagesSent")
+  receivedMessages       Message[]       @relation("MessagesReceived")
+
+  ownedChatGroups       ChatGroup[]        @relation("ChatGroupsOwned")
+  chatGroupMemberships  ChatGroupMember[]
+  sentChatGroupMessages ChatGroupMessage[]
 }
 
 model PushSubscription {
@@ -56,6 +69,26 @@ model NotificationPreference {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   enabled   Boolean  @default(false)
   settings  String   @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+// One row per admin-togglable feature, keyed by its flag id (see the
+// registry in src/game/featureFlags.ts). A missing row means enabled - the
+// pre-flag default behavior - so adding a new flag to the registry never
+// silently turns a feature off for a deployment that hasn't toggled it yet.
+model FeatureFlag {
+  id        String   @id
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// One row per admin-settable app-wide string config, keyed by id - same
+// "id = the key" idiom as FeatureFlag, just a string value instead of a
+// bool. Currently just "currentSeasonId" (see src/game/season.ts's SEASONS
+// list and src/data/appSettings.ts).
+model AppSetting {
+  id        String   @id
+  value     String
   updatedAt DateTime @updatedAt
 }
 
@@ -97,6 +130,7 @@ model Character {
   runMembers   RunMember[]
   applications Application[]
   soloQueueEntries SoloQueueEntry[]
+  seasonSnapshots  CharacterSeasonSnapshot[]
   createdAt    DateTime             @default(now())
 
   @@unique([userId, realm, name])
@@ -134,6 +168,40 @@ model CharacterSpecTrack {
   bestRuns String @default("[]")
 
   @@unique([characterId, specId])
+}
+
+// A frozen point-in-time copy of one character's season performance -
+// independent of the live Character/CharacterSpecTrack rows above, which
+// keep getting overwritten every sync. Upserted daily by the snapshot job
+// (see src/server/season/snapshotter.ts) for whichever season is currently
+// marked active (src/data/appSettings.ts), so re-running it just refreshes
+// the same row until the season actually changes - at which point it stops
+// being touched and stays frozen as history (see /profile's Season History
+// tab, src/data/seasonHistory.ts).
+model CharacterSeasonSnapshot {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  seasonId    String // matches a SeasonDef.id from src/game/season.ts
+
+  name      String
+  realm     String
+  realmSlug String
+  region    String
+  classId   String
+  faction   String
+  level     Int
+  ilvl      Int?
+  rating    Float?
+  bucket    String
+  isMain    Boolean
+  raidKills  String @default("[]") // same JSON shape as Character.raidKills
+  specTracks String @default("[]") // JSON CardSpecTrack[]-shaped (specId, role, points, bnetScore, isMain, bestRuns)
+
+  capturedAt DateTime @updatedAt
+
+  @@unique([characterId, seasonId])
+  @@index([seasonId])
 }
 
 model Group {
@@ -269,6 +337,98 @@ model SoloQueueEntry {
 
   @@index([status])
   @@index([userId, status])
+}
+
+// A friend request between two Users. Accepted rows ARE the friendship (no
+// separate Friendship table — query status="accepted" with requester=me OR
+// addressee=me); declined rows are left in place as history, same as
+// Application declines, so re-requesting after a decline is a fresh row, not
+// a revive. No DB-level "one pending pair" constraint (SQLite/Prisma can't
+// express an unordered-pair unique) — enforced app-side in src/data/network.ts.
+model FriendRequest {
+  id String @id @default(cuid())
+
+  requesterUserId String
+  requester       User   @relation("FriendRequestsSent", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  addresseeUserId String
+  addressee       User   @relation("FriendRequestsReceived", fields: [addresseeUserId], references: [id], onDelete: Cascade)
+
+  status    String   @default("pending") // pending | accepted | declined
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requesterUserId, status])
+  @@index([addresseeUserId, status])
+}
+
+// A single 1:1 chat message. Sending is gated on an accepted FriendRequest
+// existing between sender and recipient (see src/data/messages.ts) — not
+// enforced at the DB level, same trust boundary as everywhere else in this
+// schema. History is kept even after unfriending.
+model Message {
+  id String @id @default(cuid())
+
+  senderId    String
+  sender      User   @relation("MessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User   @relation("MessagesReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  body      String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, senderId, createdAt])
+}
+
+// A multi-person chat ("Team Group"). The creator must be friends with
+// everyone they add (see createChatGroup in src/data/chatGroups.ts) but
+// members are NOT required to be mutual friends with each other — they can
+// send each other friend requests from inside the group (see
+// ChatGroupInfoPanel), same FriendRequest flow as everywhere else. Named
+// ChatGroup*, not Group*, since Group is already the M+ LFG listing model.
+model ChatGroup {
+  id          String   @id @default(cuid())
+  name        String
+  ownerUserId String
+  owner       User     @relation("ChatGroupsOwned", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  members  ChatGroupMember[]
+  messages ChatGroupMessage[]
+}
+
+// Ownership transfers to the earliest-joined remaining member if the owner
+// leaves (see leaveChatGroup); the group itself is deleted if the last
+// member leaves.
+model ChatGroupMember {
+  id          String    @id @default(cuid())
+  chatGroupId String
+  chatGroup   ChatGroup @relation(fields: [chatGroupId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  addedByUserId String // not necessarily the owner - audit/context only
+  joinedAt      DateTime  @default(now())
+  // Read watermark, not a per-message read row (Message.readAt is per-row
+  // because a DM only ever has one recipient; a group message has many, so a
+  // "read up to this time" cursor is the cheap equivalent for an unread count).
+  lastReadAt    DateTime?
+
+  @@unique([chatGroupId, userId])
+  @@index([userId])
+}
+
+model ChatGroupMessage {
+  id          String    @id @default(cuid())
+  chatGroupId String
+  chatGroup   ChatGroup @relation(fields: [chatGroupId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body        String
+  createdAt   DateTime  @default(now())
+
+  @@index([chatGroupId, createdAt])
 }
 
 model GroupMember {

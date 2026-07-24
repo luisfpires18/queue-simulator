@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { joinSoloQueue, leaveSoloQueue, getMySoloQueueStatus } from "@/data/soloQueue";
 import { runMatchPass } from "@/server/soloQueue/matchRunner";
+import { isFeatureEnabled } from "@/data/featureFlags";
 import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,14 @@ export async function GET() {
 export async function POST(req: Request) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+
+  // Hides the join button in the UI (see BoardClient's soloQueueEnabled),
+  // but that's client-side only - enforce it here too so a direct POST
+  // can't join while the admin has it switched off. GET/DELETE stay open so
+  // anyone already queued before the flip can still see status and leave.
+  if (!(await isFeatureEnabled("soloQueue"))) {
+    return NextResponse.json({ error: "Solo Queue is currently disabled" }, { status: 403 });
+  }
 
   const body = await parseBody(req, joinSchema);
   if (!body.ok) return body.response;

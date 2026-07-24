@@ -34,7 +34,7 @@ export async function getCurrentSelection(userId: string): Promise<CurrentSelect
   // Valid = same class as the character, NOT "already has a CharacterSpecTrack
   // row" — the picker lets you choose any of the class's specs before you've
   // ever tracked/rated them (see specsFor's pre-curation fallback in
-  // CurrentCharacterPicker.tsx), so requiring a pre-existing track here made
+  // AccountMenuClient.tsx), so requiring a pre-existing track here made
   // an untracked-but-legitimate pick (e.g. Guardian on a resto-only-tracked
   // druid) silently revert to bestSpecFor() on the very next read.
   const storedSpecId = char.id === user?.currentCharacterId ? user?.currentSpecId ?? null : null;

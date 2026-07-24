@@ -2,18 +2,29 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { COUNTRIES } from "@/game/countries";
+import { normalizeDiscordHandle, normalizeTwitchHandle } from "@/lib/social";
 import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
 // `country` is validated separately below so it keeps its own error message.
-const schema = z.object({ showBattletag: z.boolean(), country: z.unknown().optional() });
+const schema = z.object({
+  showBattletag: z.boolean(),
+  country: z.unknown().optional(),
+  discord: z.string().max(100).nullish(),
+  twitch: z.string().max(200).nullish(),
+});
 
 export async function GET() {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
 
-  return NextResponse.json({ showBattletag: ctx.user.showBattletag, country: ctx.user.country });
+  return NextResponse.json({
+    showBattletag: ctx.user.showBattletag,
+    country: ctx.user.country,
+    discord: ctx.user.discord,
+    twitch: ctx.user.twitch,
+  });
 }
 
 export async function PUT(req: Request) {
@@ -30,8 +41,18 @@ export async function PUT(req: Request) {
 
   const updated = await prisma.user.update({
     where: { id: ctx.user.id },
-    data: { showBattletag: body.data.showBattletag, country: (country as string | undefined) ?? null },
+    data: {
+      showBattletag: body.data.showBattletag,
+      country: (country as string | undefined) ?? null,
+      discord: body.data.discord != null ? normalizeDiscordHandle(body.data.discord) : null,
+      twitch: body.data.twitch != null ? normalizeTwitchHandle(body.data.twitch) : null,
+    },
   });
 
-  return NextResponse.json({ showBattletag: updated.showBattletag, country: updated.country });
+  return NextResponse.json({
+    showBattletag: updated.showBattletag,
+    country: updated.country,
+    discord: updated.discord,
+    twitch: updated.twitch,
+  });
 }

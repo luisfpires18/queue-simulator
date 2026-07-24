@@ -1,11 +1,17 @@
 import { notFound } from "next/navigation";
+import { auth } from "@/auth";
+import { ensureUser } from "@/data/users";
 import { getPublicCharacters } from "@/data/characters";
 import { fetchCharacterTitles } from "@/data/blizzardApp";
 import { fetchRaidProgression } from "@/data/raiderio";
+import { getLiveStreamInfo } from "@/data/twitch";
 import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
+import { TwitchLivePreview } from "@/components/profile/TwitchLivePreview";
+import { AddFriendButton } from "@/components/network/AddFriendButton";
 import { bestSpecFor } from "@/game/roster";
+import { highestCharacterRating } from "@/game/rating";
 
 // Titles are account-wide, so one character's title list already reflects
 // the whole account - no need to fetch per character on a multi-alt roster.
@@ -33,6 +39,10 @@ export default async function PublicProfilePage({
   const data = await getPublicCharacters(decodeURIComponent(realmSlug), decodeURIComponent(name));
   if (!data) notFound();
 
+  const session = await auth();
+  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
+  const viewer = s?.bnetId ? await ensureUser(s.bnetId, s.battletag) : null;
+
   // Fallback only for characters WCL gave us nothing for (most commonly:
   // their logs are private) - not a blanket extra API call per character.
   const characters = await Promise.all(
@@ -48,20 +58,31 @@ export default async function PublicProfilePage({
   const mainChar = characters.find((c) => c.isMain) ?? characters[0] ?? null;
   const displayName = data.battletag?.split("#")[0] ?? mainChar?.name ?? "Player";
   const r1Titles = mainChar ? await fetchR1TitleCount(mainChar.region, mainChar.realmSlug, mainChar.name) : null;
+  // Best-effort, same rationale as fetchR1TitleCount - Twitch being slow or
+  // unconfigured just hides the preview, never fails the profile.
+  const twitchLive = data.twitch ? await getLiveStreamInfo(data.twitch).catch(() => null) : null;
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-black">{displayName}</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-black">{displayName}</h1>
+        {viewer && viewer.id !== data.userId && <AddFriendButton targetUserId={data.userId} />}
+      </div>
       {mainChar && (
         <ProfileOverview
           battletag={data.battletag}
           memberSince={data.memberSince}
           characterCount={data.characters.length}
           country={data.country}
-          main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null, rating: mainChar.rating }}
+          discord={data.discord}
+          twitch={data.twitch}
+          twitchLive={twitchLive != null}
+          main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null }}
+          highestRating={highestCharacterRating(characters)}
           r1Titles={r1Titles}
         />
       )}
+      {twitchLive && data.twitch && <TwitchLivePreview twitch={data.twitch} live={twitchLive} />}
       {(["main", "alt"] as const).map((bucket) =>
         byBucket[bucket].length ? (
           <div key={bucket} className="panel p-4">

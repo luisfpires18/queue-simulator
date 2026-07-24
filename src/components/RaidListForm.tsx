@@ -151,7 +151,7 @@ export function RaidListForm({
           </div>
         </Field>
 
-        <Field label="Description (optional)">
+        <Field label="Description">
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}

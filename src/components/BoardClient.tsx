@@ -46,7 +46,7 @@ function RoleMaxSlider({
 }
 
 export function BoardClient({
-  initial, canList, current, viewerUserId, initialMyApps, initialSoloQueueStatus,
+  initial, canList, current, viewerUserId, initialMyApps, initialSoloQueueStatus, soloQueueEnabled,
 }: {
   initial: GroupDTO[];
   canList: boolean;
@@ -60,6 +60,10 @@ export function BoardClient({
    * getMySoloQueueStatus. Seeds SoloQueueClient so first paint shows
    * queued/matched instead of flashing "Find Group". */
   initialSoloQueueStatus?: SoloQueueStatusDTO;
+  /** Admin kill switch - see isFeatureEnabled("soloQueue") in
+   * src/data/featureFlags.ts. Hides the whole section when off; the join
+   * route (POST /api/solo-queue) enforces it server-side too. */
+  soloQueueEnabled: boolean;
 }) {
   const { groups, live, removeGroup } = useLiveBoard(initial);
   const [lo, setLo, clearLo] = useLocalStorageState("mplus-filters-lo-v1", MIN_KEY);
@@ -328,7 +332,7 @@ export function BoardClient({
 
       {/* groups */}
       <section className="space-y-6">
-        {canList && current && (
+        {canList && current && soloQueueEnabled && (
           <div>
             <div className="mb-3">
               <div className="text-sm font-bold uppercase tracking-wide text-gray-300">Solo Queue</div>

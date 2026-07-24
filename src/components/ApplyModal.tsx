@@ -189,77 +189,79 @@ export function ApplyModal({
               <p className="text-xs text-rose-300">No open {ROLE_LABEL[role].toLowerCase()} slot in this group.</p>
             )}
 
-            {showRoute && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
-                  Route (optional) - so the leader can review your pull plan
-                </label>
-                <textarea
-                  value={route}
-                  onChange={(e) => setRoute(e.target.value)}
-                  maxLength={4000}
-                  rows={3}
-                  disabled={resolved}
-                  placeholder="Paste your MDT route link or import string..."
-                  className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-xs font-mono resize-none disabled:opacity-60"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
-                Note (optional)
-              </label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                maxLength={500}
-                rows={2}
-                disabled={resolved}
-                placeholder="Anything the owner should know - availability, routing preference, etc."
-                className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-sm resize-none disabled:opacity-60"
-              />
-            </div>
-
-            <ApplyCoverageSection label="Buffs & Debuffs" have={buffCoverage.have} />
-            <ApplyCoverageSection label="Utility" have={utilityCoverage.have} />
-            <ApplyCoverageSection label="Friendly Dispels" have={dispelCoverage.have} />
-            <ApplyCoverageSection label="Enemy Magic Dispels" have={enemyDispelCoverage.have} />
-            <ApplyCoverageSection label="Party Defensives" have={defensiveCoverage.have} />
-            <ApplyCoverageSection label="External Defensives" have={externalDefensiveCoverage.have} />
-
-            {existing?.status === "declined" && !outOfChances && (
-              <p className="text-xs text-amber-300">
-                Declined last time - you can apply again ({MAX_APPLICATION_DECLINES - declinedCount} attempt{MAX_APPLICATION_DECLINES - declinedCount === 1 ? "" : "s"} left).
-              </p>
-            )}
-
-            {err && <p className="text-rose-400 text-sm">{err}</p>}
-
-            {existing === undefined ? (
-              <button disabled className="btn-gold w-full opacity-60 cursor-wait">Loading…</button>
-            ) : resolved ? (
-              <div
-                className={cn(
-                  "rounded-md border px-3 py-2 text-center text-sm font-semibold uppercase tracking-wide",
-                  existing!.status === "accepted"
-                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                    : "border-rose-500/50 bg-rose-500/10 text-rose-300"
+            {hasOpenSlot && (
+              <>
+                {showRoute && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
+                      Route
+                    </label>
+                    <textarea
+                      value={route}
+                      onChange={(e) => setRoute(e.target.value)}
+                      maxLength={4000}
+                      rows={3}
+                      disabled={resolved}
+                      className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-xs font-mono resize-none disabled:opacity-60"
+                    />
+                  </div>
                 )}
-              >
-                {existing!.status === "accepted" ? "Application accepted" : "Declined twice - no more attempts"}
-              </div>
-            ) : (
-              <button
-                onClick={submit}
-                disabled={
-                  submitting ||
-                  (pending && note.trim() === originalNote.trim() && (!showRoute || route.trim() === originalRoute.trim()))
-                }
-                className="btn-gold w-full disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? "Sending…" : existing?.status === "declined" ? "Apply again" : pending ? "Update application" : "Send application"}
-              </button>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">
+                    Note
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    disabled={resolved}
+                    className="w-full bg-panel2 border border-panelborder rounded-md px-3 py-2 text-sm resize-none disabled:opacity-60"
+                  />
+                </div>
+
+                <ApplyCoverageSection label="Buffs & Debuffs" have={buffCoverage.have} />
+                <ApplyCoverageSection label="Utility" have={utilityCoverage.have} />
+                <ApplyCoverageSection label="Friendly Dispels" have={dispelCoverage.have} />
+                <ApplyCoverageSection label="Enemy Magic Dispels" have={enemyDispelCoverage.have} />
+                <ApplyCoverageSection label="Party Defensives" have={defensiveCoverage.have} />
+                <ApplyCoverageSection label="External Defensives" have={externalDefensiveCoverage.have} />
+
+                {existing?.status === "declined" && !outOfChances && (
+                  <p className="text-xs text-amber-300">
+                    Declined last time - you can apply again ({MAX_APPLICATION_DECLINES - declinedCount} attempt{MAX_APPLICATION_DECLINES - declinedCount === 1 ? "" : "s"} left).
+                  </p>
+                )}
+
+                {err && <p className="text-rose-400 text-sm">{err}</p>}
+
+                {existing === undefined ? (
+                  <button disabled className="btn-gold w-full opacity-60 cursor-wait">Loading…</button>
+                ) : resolved ? (
+                  <div
+                    className={cn(
+                      "rounded-md border px-3 py-2 text-center text-sm font-semibold uppercase tracking-wide",
+                      existing!.status === "accepted"
+                        ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                        : "border-rose-500/50 bg-rose-500/10 text-rose-300"
+                    )}
+                  >
+                    {existing!.status === "accepted" ? "Application accepted" : "Declined twice - no more attempts"}
+                  </div>
+                ) : (
+                  <button
+                    onClick={submit}
+                    disabled={
+                      submitting ||
+                      (pending && note.trim() === originalNote.trim() && (!showRoute || route.trim() === originalRoute.trim()))
+                    }
+                    className="btn-gold w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? "Sending…" : existing?.status === "declined" ? "Apply again" : pending ? "Update application" : "Send application"}
+                  </button>
+                )}
+              </>
             )}
           </>
         )}

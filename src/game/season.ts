@@ -9,11 +9,30 @@ export interface DungeonDef {
   icon: string; // Blizzard "Keystone Hero: <dungeon>" achievement icon slug (same set raider.io uses)
 }
 
-export const SEASON = {
-  expansion: "Midnight",
-  season: 1,
-  patch: "12.0.7",
-};
+// Every season the app knows about, keyed by a stable slug - never rename
+// one once shipped, it's the FK target for CharacterSeasonSnapshot rows
+// (see src/data/seasonHistory.ts). Which one is "current" is an admin-set
+// runtime toggle (src/data/appSettings.ts's currentSeasonId), NOT this
+// array's order or last entry - so a new season can be added here (e.g.
+// once it's known from PTR) well before it actually goes live, without
+// switching anything over on its own.
+export interface SeasonDef {
+  id: string;
+  expansion: string;
+  season: number;
+  patch: string;
+}
+
+export const SEASONS: SeasonDef[] = [
+  { id: "midnight-s1", expansion: "Midnight", season: 1, patch: "12.0.7" },
+  { id: "midnight-s2", expansion: "Midnight", season: 2, patch: "TBD" }, // on PTR - fill in the real patch once known
+];
+
+export const DEFAULT_SEASON_ID = "midnight-s1";
+
+export function seasonById(id: string): SeasonDef {
+  return SEASONS.find((s) => s.id === id) ?? SEASONS[0];
+}
 
 // Season 1's 8-dungeon pool. When S2 rotates the pool, edit this array only —
 // everything that reads DUNGEONS/DUNGEON_BY_ID (board, list form, comp

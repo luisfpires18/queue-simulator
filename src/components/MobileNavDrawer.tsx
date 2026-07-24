@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 
 // ChatGPT-style mobile nav: a hamburger button that slides in a left drawer
 // over a dimmed overlay. Every item inside is still server-rendered by
-// RootLayout (auth-gated links, CurrentCharacterNav, HeaderAuth) and just
-// passed through as children - this component only owns the open/close state
-// and the drawer chrome, never re-renders server logic itself.
+// RootLayout (auth-gated links, AccountMenu) and just passed through as
+// children - this component only owns the open/close state and the drawer
+// chrome, never re-renders server logic itself.
 //
 // The overlay+panel are portaled straight to document.body rather than
 // rendered where this component sits in the tree. The header they'd

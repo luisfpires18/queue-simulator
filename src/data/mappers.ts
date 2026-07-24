@@ -7,9 +7,14 @@ import type { RaidKillDifficulty } from "@/game/raidSeason";
 import type {
   ApplicationDTO,
   CharacterDTO,
+  ChatGroupMessageDTO,
   ComboMember,
+  DisplayIdentityDTO,
   DungeonBestRun,
+  FriendDTO,
+  FriendRequestDTO,
   GroupDTO,
+  MessageDTO,
   OpenSlot,
   RaidKillDTO,
 } from "./dto";
@@ -138,4 +143,38 @@ export function applicationDTO(a: {
     role: a.role, specId: a.specId, note: a.note, route: a.route, status: a.status, source: a.source,
     createdAt: a.createdAt.toISOString(),
   };
+}
+
+export function friendRequestDTO(
+  r: { id: string; requesterUserId: string; addresseeUserId: string; status: string; createdAt: Date },
+  requester: DisplayIdentityDTO,
+  addressee: DisplayIdentityDTO
+): FriendRequestDTO {
+  return {
+    id: r.id, requesterUserId: r.requesterUserId, addresseeUserId: r.addresseeUserId,
+    status: r.status, createdAt: r.createdAt.toISOString(), requester, addressee,
+  };
+}
+
+export function friendDTO(
+  f: { friendRequestId: string; userId: string; since: Date },
+  identity: DisplayIdentityDTO,
+  unreadCount: number,
+  online: boolean
+): FriendDTO {
+  return { userId: f.userId, friendRequestId: f.friendRequestId, since: f.since.toISOString(), identity, unreadCount, online };
+}
+
+export function messageDTO(m: { id: string; senderId: string; recipientId: string; body: string; createdAt: Date; readAt: Date | null }): MessageDTO {
+  return {
+    id: m.id, senderId: m.senderId, recipientId: m.recipientId, body: m.body,
+    createdAt: m.createdAt.toISOString(), readAt: m.readAt ? m.readAt.toISOString() : null,
+  };
+}
+
+export function chatGroupMessageDTO(
+  m: { id: string; chatGroupId: string; senderId: string; body: string; createdAt: Date },
+  senderIdentity: DisplayIdentityDTO
+): ChatGroupMessageDTO {
+  return { id: m.id, chatGroupId: m.chatGroupId, senderId: m.senderId, senderIdentity, body: m.body, createdAt: m.createdAt.toISOString() };
 }

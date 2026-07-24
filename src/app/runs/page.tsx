@@ -4,12 +4,13 @@ import { listGroups } from "@/data/groups";
 import { getMyApplicationsByGroup } from "@/data/applications";
 import { ensureUser, getCurrentSelection } from "@/data/users";
 import { getMySoloQueueStatus } from "@/data/soloQueue";
+import { isFeatureEnabled } from "@/data/featureFlags";
 import { BoardClient } from "@/components/BoardClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function RunsPage() {
-  const [groups, session] = await Promise.all([listGroups(), auth()]);
+  const [groups, session, soloQueueEnabled] = await Promise.all([listGroups(), auth(), isFeatureEnabled("soloQueue")]);
   const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
   // Checking bnetId, not just user - a session can carry a `user` object
   // with no bnetId (e.g. a stale cookie predating this field), and
@@ -37,7 +38,7 @@ export default async function RunsPage() {
           <Link href="/list" className="btn-gold">List your Key</Link>
         )}
       </div>
-      <BoardClient initial={groups} canList={loggedIn} current={current} viewerUserId={user?.id ?? null} initialMyApps={myApps} initialSoloQueueStatus={soloQueueStatus} />
+      <BoardClient initial={groups} canList={loggedIn} current={current} viewerUserId={user?.id ?? null} initialMyApps={myApps} initialSoloQueueStatus={soloQueueStatus} soloQueueEnabled={soloQueueEnabled} />
     </div>
   );
 }

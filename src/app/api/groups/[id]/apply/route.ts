@@ -32,6 +32,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (group.slots.length === 0) {
     return NextResponse.json({ error: "This group is full" }, { status: 400 });
   }
+  if (!group.slots.some((s) => s.role === body.data.role)) {
+    return NextResponse.json({ error: `No open ${body.data.role.toLowerCase()} slot in this group` }, { status: 400 });
+  }
 
   if (group.ownerUserId === ctx.user.id) {
     return NextResponse.json({ error: "You can't apply to your own key" }, { status: 400 });

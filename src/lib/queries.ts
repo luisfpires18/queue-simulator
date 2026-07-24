@@ -9,7 +9,18 @@
 // state) and the pre-React-Query code refetched on every mount, so serving
 // a cached result for 10s would be a behavior change, not an optimization.
 import { useQuery } from "@tanstack/react-query";
-import type { ApplicationWithRatingDTO, MyApplicationStateDTO, SoloQueueStatusDTO } from "@/data/dto";
+import type {
+  ApplicationWithRatingDTO,
+  ChatGroupDTO,
+  ChatGroupMessageDTO,
+  ChatGroupSummaryDTO,
+  FriendDTO,
+  FriendRequestDTO,
+  FriendshipStatus,
+  MessageDTO,
+  MyApplicationStateDTO,
+  SoloQueueStatusDTO,
+} from "@/data/dto";
 import type { Role } from "@/game/classes";
 import { apiFetch } from "./api-client";
 
@@ -18,6 +29,13 @@ export const queryKeys = {
   myApplication: (groupId: string) => ["my-application", groupId] as const,
   pendingApplications: (groupId: string, role: string, page: number) =>
     ["pending-applications", groupId, role, page] as const,
+  friends: ["friends"] as const,
+  friendRequests: ["friend-requests"] as const,
+  friendshipStatus: (userId: string) => ["friendship-status", userId] as const,
+  messages: (friendUserId: string) => ["messages", friendUserId] as const,
+  chatGroups: ["chat-groups"] as const,
+  chatGroup: (groupId: string) => ["chat-group", groupId] as const,
+  chatGroupMessages: (groupId: string) => ["chat-group-messages", groupId] as const,
 };
 
 /** The caller's Solo Queue state. Polls every 4s while queued/matched - the
@@ -73,5 +91,84 @@ export function usePendingApplications(groupId: string, role: "ALL" | Role, page
         `/api/groups/${groupId}/applications?page=${page}&pageSize=${pageSize}${roleParam}`
       ),
     staleTime: 0,
+  });
+}
+
+/** The caller's friends list, each with an unread-message count. `initialData`
+ * (from the /network page's server render) makes the first paint show real
+ * data; staleTime 0 still refetches right away and on every SSE event. */
+export function useFriends(initialData?: FriendDTO[]) {
+  return useQuery({
+    queryKey: queryKeys.friends,
+    queryFn: () => apiFetch<{ friends: FriendDTO[] }>("/api/network/friends").then((r) => r.friends),
+    staleTime: 0,
+    initialData,
+  });
+}
+
+export interface FriendRequestsResponse {
+  incoming: FriendRequestDTO[];
+  outgoing: FriendRequestDTO[];
+}
+
+export function useFriendRequests(initialData?: FriendRequestsResponse) {
+  return useQuery({
+    queryKey: queryKeys.friendRequests,
+    queryFn: () => apiFetch<FriendRequestsResponse>("/api/network/requests"),
+    staleTime: 0,
+    initialData,
+  });
+}
+
+/** Backs the public-profile Add Friend button's state. */
+export function useFriendshipStatus(userId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.friendshipStatus(userId),
+    queryFn: () => apiFetch<{ status: FriendshipStatus }>(`/api/network/status/${userId}`).then((r) => r.status),
+    staleTime: 0,
+    enabled,
+  });
+}
+
+export function useMessages(friendUserId: string, initialData?: MessageDTO[], enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.messages(friendUserId),
+    queryFn: () => apiFetch<{ messages: MessageDTO[] }>(`/api/network/messages/${friendUserId}`).then((r) => r.messages),
+    staleTime: 0,
+    initialData,
+    enabled,
+  });
+}
+
+/** The caller's Team Groups, each with a member count, unread count, and
+ * last-message preview. */
+export function useChatGroups(initialData?: ChatGroupSummaryDTO[]) {
+  return useQuery({
+    queryKey: queryKeys.chatGroups,
+    queryFn: () => apiFetch<{ groups: ChatGroupSummaryDTO[] }>("/api/network/groups").then((r) => r.groups),
+    staleTime: 0,
+    initialData,
+  });
+}
+
+/** Full detail for one group (members, ownership, per-member friendship
+ * status relative to the caller) — the dock's group header + info panel. */
+export function useChatGroup(groupId: string, initialData?: ChatGroupDTO, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.chatGroup(groupId),
+    queryFn: () => apiFetch<{ group: ChatGroupDTO }>(`/api/network/groups/${groupId}`).then((r) => r.group),
+    staleTime: 0,
+    initialData,
+    enabled,
+  });
+}
+
+export function useChatGroupMessages(groupId: string, initialData?: ChatGroupMessageDTO[], enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.chatGroupMessages(groupId),
+    queryFn: () => apiFetch<{ messages: ChatGroupMessageDTO[] }>(`/api/network/groups/${groupId}/messages`).then((r) => r.messages),
+    staleTime: 0,
+    initialData,
+    enabled,
   });
 }

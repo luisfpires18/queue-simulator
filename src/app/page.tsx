@@ -1,4 +1,5 @@
-import { SEASON } from "@/game/season";
+import { seasonById } from "@/game/season";
+import { getCurrentSeasonId } from "@/data/appSettings";
 import { HomeSection } from "@/components/home/HomeSection";
 import { PlayerSearchBar } from "@/components/home/PlayerSearchBar";
 import { fetchRealmIndex } from "@/data/blizzardApp";
@@ -15,13 +16,14 @@ export default async function LandingPage() {
   // round trip before the realm list is usable. Falls back to the client's
   // own fetch (with its own loading state) if this fails for any reason.
   const initialRealms = await fetchRealmIndex("eu").catch(() => []);
+  const season = seasonById(await getCurrentSeasonId());
 
   return (
     <div className="space-y-20 py-8">
       {/* hero */}
       <div className="flex flex-col items-center text-center gap-6">
         <span className="text-[11px] uppercase tracking-widest text-gray-500">
-          {SEASON.expansion} · Season {SEASON.season}
+          {season.expansion} · Season {season.season}
         </span>
         <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
           Play more. Queue less.

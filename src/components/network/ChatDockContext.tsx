@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 export type ChatThreadId = { kind: "dm"; userId: string } | { kind: "group"; groupId: string };
 
@@ -48,6 +48,19 @@ function isMobileViewport(): boolean {
 export function ChatDockProvider({ children, currentUserId }: { children: React.ReactNode; currentUserId?: string }) {
   const [openChats, setOpenChats] = useState<OpenChat[]>([]);
   const [fullscreenThread, setFullscreenThread] = useState<ChatThreadId | null>(null);
+
+  // ChatDockProvider lives at the root layout and never unmounts across
+  // login/logout (no hard reload happens) - without this, a previous
+  // session's open dock windows (and whatever they'd show) linger for
+  // whoever's using the browser next, logged out or as a different account.
+  const prevUserId = useRef(currentUserId);
+  useEffect(() => {
+    if (prevUserId.current !== currentUserId) {
+      setOpenChats([]);
+      setFullscreenThread(null);
+      prevUserId.current = currentUserId;
+    }
+  }, [currentUserId]);
 
   const openChat = useCallback((thread: ChatThreadId) => {
     setOpenChats((prev) => {

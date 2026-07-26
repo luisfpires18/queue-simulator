@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ChatGroupMessageDTO, MessageDTO } from "@/data/dto";
+import type { ChatGroupMessageDTO, ChatGroupSummaryDTO, FriendDTO, MessageDTO } from "@/data/dto";
 import { ApiClientError, apiPost } from "@/lib/api-client";
 import { queryKeys, useChatGroupMessages, useMessages } from "@/lib/queries";
 import { useChatDock, threadKey, type ChatThreadId } from "./ChatDockContext";
@@ -55,7 +55,24 @@ export function ChatThreadBody({
 
   useEffect(() => {
     const url = thread.kind === "dm" ? `/api/network/messages/${thread.userId}/read` : `/api/network/groups/${thread.groupId}/messages/read`;
-    apiPost(url).catch(() => {});
+    apiPost(url)
+      .then(() => {
+        // Zero the badge instantly instead of waiting on the next SSE event
+        // (those only fire for new messages, never for reads) - then
+        // reconcile with the server in case one arrived in the gap.
+        if (thread.kind === "dm") {
+          queryClient.setQueryData<FriendDTO[]>(queryKeys.friends, (old) =>
+            old?.map((f) => (f.userId === thread.userId ? { ...f, unreadCount: 0 } : f))
+          );
+          queryClient.invalidateQueries({ queryKey: queryKeys.friends });
+        } else {
+          queryClient.setQueryData<ChatGroupSummaryDTO[]>(queryKeys.chatGroups, (old) =>
+            old?.map((g) => (g.id === thread.groupId ? { ...g, unreadCount: 0 } : g))
+          );
+          queryClient.invalidateQueries({ queryKey: queryKeys.chatGroups });
+        }
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 

@@ -3,6 +3,7 @@ import { auth, signOut, bnetEnabled } from "@/auth";
 import { ensureUser, getCurrentSelection } from "@/data/users";
 import { getUserCharacters, getSpecTracks } from "@/data/characters";
 import { listFriends, listIncomingRequests, listOutgoingRequests } from "@/data/network";
+import { listMyChatGroups } from "@/data/chatGroups";
 import { getCurrentSeasonId } from "@/data/appSettings";
 import { seasonById } from "@/game/season";
 import { AccountMenuClient } from "./AccountMenuClient";
@@ -38,10 +39,11 @@ export async function AccountMenu() {
   const chars = (await getUserCharacters(user.id)).filter((c) => c.bucket !== "hidden");
   const characters = await Promise.all(chars.map(async (c) => ({ ...c, specTracks: await getSpecTracks(c.id) })));
   const current = await getCurrentSelection(user.id);
-  const [friends, incoming, outgoing, currentSeasonId] = await Promise.all([
+  const [friends, incoming, outgoing, chatGroups, currentSeasonId] = await Promise.all([
     listFriends(user.id),
     listIncomingRequests(user.id),
     listOutgoingRequests(user.id),
+    listMyChatGroups(user.id),
     getCurrentSeasonId(),
   ]);
   const season = seasonById(currentSeasonId);
@@ -60,6 +62,7 @@ export async function AccountMenu() {
       battletag={s.battletag ?? null}
       initialFriends={friends}
       initialRequests={{ incoming, outgoing }}
+      initialChatGroups={chatGroups}
       season={season}
       onLogout={logout}
     />

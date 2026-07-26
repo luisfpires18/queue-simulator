@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { CurrentSelectionDTO, FriendDTO, RosterCharacterDTO } from "@/data/dto";
+import type { ChatGroupSummaryDTO, CurrentSelectionDTO, FriendDTO, RosterCharacterDTO } from "@/data/dto";
 import { CLASS_BY_ID, classById, type ClassId } from "@/game/classes";
 import type { SeasonDef } from "@/game/season";
 import { bestSpecFor } from "@/game/roster";
 import { classIconSlug } from "@/game/icons";
 import { WowIcon } from "./WowIcon";
 import { SpecIcon } from "./SpecIcon";
-import { useFriendRequests, useFriends, type FriendRequestsResponse } from "@/lib/queries";
+import { useChatGroups, useFriendRequests, useFriends, type FriendRequestsResponse } from "@/lib/queries";
 import { useNetworkStream } from "./network/useNetworkStream";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ function specsFor(character: RosterCharacterDTO) {
  * Network status, and account/logout — one trigger button instead of three
  * separate chips. */
 export function AccountMenuClient({
-  characters, current, displayName, battletag, initialFriends, initialRequests, season, onLogout,
+  characters, current, displayName, battletag, initialFriends, initialRequests, initialChatGroups, season, onLogout,
 }: {
   characters: RosterCharacterDTO[];
   current: CurrentSelectionDTO | null;
@@ -47,6 +47,7 @@ export function AccountMenuClient({
   battletag: string | null;
   initialFriends: FriendDTO[];
   initialRequests: FriendRequestsResponse;
+  initialChatGroups: ChatGroupSummaryDTO[];
   season: SeasonDef;
   onLogout: () => Promise<void>;
 }) {
@@ -65,7 +66,16 @@ export function AccountMenuClient({
   // every friend_request/friend_resolved event, so accepting/declining
   // updates the badge immediately instead of only on the next navigation.
   const { data: requests } = useFriendRequests(initialRequests);
-  const pendingCount = (requests ?? initialRequests).incoming.length;
+  const { data: chatGroups } = useChatGroups(initialChatGroups);
+  // One combined badge for everything waiting on the user - incoming friend
+  // requests plus unread DM/group messages. Both unreadCount fields already
+  // go to 0 the moment the thread's opened (markThreadRead/markChatGroupRead),
+  // and useNetworkStream's "message"/"chat_group_message" handlers already
+  // invalidate these same queries, so this clears live, not just on reload.
+  const unreadMessages =
+    (friends ?? initialFriends).reduce((sum, f) => sum + f.unreadCount, 0) +
+    (chatGroups ?? initialChatGroups).reduce((sum, g) => sum + g.unreadCount, 0);
+  const pendingCount = (requests ?? initialRequests).incoming.length + unreadMessages;
 
   useEffect(() => {
     function onClick(e: MouseEvent) {

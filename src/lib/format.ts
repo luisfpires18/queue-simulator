@@ -2,9 +2,13 @@
 // previously copy-pasted between the two to avoid a circular import.
 import type { GroupDTO } from "@/data/dto";
 
+/** The requirement fields a GroupDTO and a TeamDTO have in common - both
+ * listing kinds use the same advisory vocabulary, so both render this chip. */
+type WithRequirement = Pick<GroupDTO, "requirementType" | "reqRating" | "reqLevel" | "reqExtraCount" | "reqExtraLevel">;
+
 /** Compact label for the optional applicant-requirement chip - advisory
  * only, see src/game/achievements.ts. */
-export function requirementChipLabel(group: GroupDTO): string | null {
+export function requirementChipLabel(group: WithRequirement): string | null {
   switch (group.requirementType) {
     case "rating":
       return group.reqRating != null ? `${group.reqRating}+ rating` : null;

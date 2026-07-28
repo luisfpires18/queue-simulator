@@ -55,6 +55,7 @@ export function WowIcon({
       width={size}
       height={size}
       loading="lazy"
+      decoding="async"
       onError={() => setBroken(true)}
       className={cn(radius, "object-cover select-none", className)}
       style={{ width: size, height: size }}

@@ -1,27 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import { UsersTable } from "./UsersTable";
-import { FeatureFlagsPanel } from "./FeatureFlagsPanel";
-import { SeasonPanel } from "./SeasonPanel";
+import dynamic from "next/dynamic";
 import type { AdminUserRow } from "@/data/admin";
-import type { FeatureFlagStateDTO } from "@/data/dto";
+import type { DeclineReasonDTO, FeatureFlagStateDTO } from "@/data/dto";
 import type { SeasonDef } from "@/game/season";
+
+// Code-split: only the active tab's panel needs to be in the bundle at all -
+// the other three are dead weight on every admin load otherwise.
+const UsersTable = dynamic(() => import("./UsersTable").then((m) => m.UsersTable));
+const FeatureFlagsPanel = dynamic(() => import("./FeatureFlagsPanel").then((m) => m.FeatureFlagsPanel));
+const DeclineReasonsPanel = dynamic(() => import("./DeclineReasonsPanel").then((m) => m.DeclineReasonsPanel));
+const SeasonPanel = dynamic(() => import("./SeasonPanel").then((m) => m.SeasonPanel));
 
 // More admin sections slot in here later without touching the layout.
 const SECTIONS = [
   { id: "users", label: "Users" },
   { id: "featureFlags", label: "Feature Flags" },
+  { id: "declineReasons", label: "Decline Reasons" },
   { id: "season", label: "Season" },
 ] as const;
 type Section = (typeof SECTIONS)[number]["id"];
 
 export function AdminClient({
-  initialUsers, initialTotal, initialFlags, seasons, initialCurrentSeasonId,
+  initialUsers, initialTotal, initialFlags, initialDeclineReasons, seasons, initialCurrentSeasonId,
 }: {
   initialUsers: AdminUserRow[];
   initialTotal: number;
   initialFlags: FeatureFlagStateDTO[];
+  initialDeclineReasons: DeclineReasonDTO[];
   seasons: SeasonDef[];
   initialCurrentSeasonId: string;
 }) {
@@ -45,6 +52,7 @@ export function AdminClient({
       <div className="flex-1 min-w-0 w-full">
         {section === "users" && <UsersTable initialUsers={initialUsers} initialTotal={initialTotal} />}
         {section === "featureFlags" && <FeatureFlagsPanel initialFlags={initialFlags} />}
+        {section === "declineReasons" && <DeclineReasonsPanel initialReasons={initialDeclineReasons} />}
         {section === "season" && <SeasonPanel seasons={seasons} initialCurrentSeasonId={initialCurrentSeasonId} />}
       </div>
     </div>

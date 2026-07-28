@@ -46,7 +46,7 @@ function RoleMaxSlider({
 }
 
 export function BoardClient({
-  initial, canList, current, viewerUserId, initialMyApps, initialSoloQueueStatus, soloQueueEnabled,
+  initial, canList, current, viewerUserId, initialMyApps, initialPendingCounts, initialSoloQueueStatus, soloQueueEnabled,
 }: {
   initial: GroupDTO[];
   canList: boolean;
@@ -56,6 +56,9 @@ export function BoardClient({
    * getMyApplicationsByGroup. Seeds each card's Apply button so first paint
    * shows the real state instead of flashing "Apply". */
   initialMyApps?: Record<string, MyApplicationStateDTO>;
+  /** Pending-application counts for the viewer's OWN listings only, so the
+   * badge is in the first paint (see getPendingCountsByGroup). */
+  initialPendingCounts?: Record<string, number>;
   /** The viewer's Solo Queue state, from the server render - see
    * getMySoloQueueStatus. Seeds SoloQueueClient so first paint shows
    * queued/matched instead of flashing "Find Group". */
@@ -401,7 +404,7 @@ export function BoardClient({
               )}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {othersPageItems.map((g) => (
-                  <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} highlighted={g.id === highlightId} onDelisted={removeGroup} initialMyApp={initialMyApps?.[g.id]} />
+                  <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} highlighted={g.id === highlightId} onDelisted={removeGroup} initialMyApp={initialMyApps?.[g.id]} initialPendingCount={initialPendingCounts?.[g.id]} />
                 ))}
               </div>
               {othersTotalPages > 1 && (
@@ -428,7 +431,7 @@ export function BoardClient({
               {mineOpen && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {mine.map((g) => (
-                    <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} highlighted={g.id === highlightId} onDelisted={removeGroup} initialMyApp={initialMyApps?.[g.id]} />
+                    <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} highlighted={g.id === highlightId} onDelisted={removeGroup} initialMyApp={initialMyApps?.[g.id]} initialPendingCount={initialPendingCounts?.[g.id]} />
                   ))}
                 </div>
               )}

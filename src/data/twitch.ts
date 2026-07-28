@@ -2,6 +2,7 @@
 // card). Best-effort like fetchR1TitleCount in the public profile page - a
 // Twitch hiccup or unconfigured credentials should just hide the preview,
 // never fail the whole profile.
+import { cache } from "react";
 import { getTwitchToken, twitchEnabled } from "@/server/twitch/auth";
 import type { TwitchLiveInfoDTO } from "./dto";
 
@@ -17,8 +18,12 @@ interface HelixStream {
 
 /** Null when the channel isn't live, TWITCH_CLIENT_ID/SECRET aren't
  * configured, or the Helix call fails - all treated the same by callers
- * (fall back to a plain twitch.tv/<login> link). */
-export async function getLiveStreamInfo(login: string): Promise<TwitchLiveInfoDTO | null> {
+ * (fall back to a plain twitch.tv/<login> link). React-cached per request -
+ * a profile page's inline LIVE badge and its preview-panel card each check
+ * this independently (see TwitchLiveBadge/TwitchLivePreviewGate) so they
+ * can each sit behind their own Suspense boundary without duplicating the
+ * Helix call. */
+export const getLiveStreamInfo = cache(async (login: string): Promise<TwitchLiveInfoDTO | null> => {
   if (!twitchEnabled()) return null;
 
   try {
@@ -41,4 +46,4 @@ export async function getLiveStreamInfo(login: string): Promise<TwitchLiveInfoDT
     console.error("getLiveStreamInfo failed", err);
     return null;
   }
-}
+});

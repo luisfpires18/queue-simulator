@@ -4,6 +4,7 @@
 // helpers (src/server/wclHelpers.ts) — those throw ApiError and their
 // requireUser deliberately never refreshes battletag, so merging the two
 // would change response bodies.
+import { cache } from "react";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 import { auth } from "@/auth";
@@ -12,21 +13,28 @@ import { prisma } from "@/lib/prisma";
 
 export type BnetSession = { bnetId: string; battletag?: string; accessToken?: string };
 
-/** The signed-in Battle.net session, or null. */
-export async function getBnetSession(): Promise<BnetSession | null> {
+/** The signed-in Battle.net session, or null.
+ *
+ * React-cached, so the several server components that each need the session
+ * during one render (the layout, and AccountMenu - which the layout renders
+ * twice, desktop + mobile drawer) share a single JWT decrypt instead of
+ * repeating it three times. */
+export const getBnetSession = cache(async (): Promise<BnetSession | null> => {
   const session = await auth();
   const s = session as (typeof session & { bnetId?: string; battletag?: string; accessToken?: string }) | null;
   if (!s?.bnetId) return null;
   return { bnetId: s.bnetId, battletag: s.battletag, accessToken: s.accessToken };
-}
+});
 
-/** Session plus its materialized User row, or null when not signed in. */
-export async function getSessionUser() {
+/** Session plus its materialized User row, or null when not signed in.
+ * Cached for the same reason as getBnetSession - this one also collapses
+ * three ensureUser round trips per render into one. */
+export const getSessionUser = cache(async () => {
   const s = await getBnetSession();
   if (!s) return null;
   const user = await ensureUser(s.bnetId, s.battletag);
   return { user, session: s };
-}
+});
 
 export function notAuthenticated() {
   return NextResponse.json({ error: "Not authenticated" }, { status: 401 });

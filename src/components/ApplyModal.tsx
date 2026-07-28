@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ApplicationDTO, CurrentSelectionDTO, GroupDTO } from "@/data/dto";
+import { useQueryClient } from "@tanstack/react-query";
+import type { ApplicationDTO, CurrentSelectionDTO, GroupDTO, MyApplicationStateDTO } from "@/data/dto";
 import { specById, type Role } from "@/game/classes";
 import { DUNGEON_BY_ID } from "@/game/season";
 import { RAID_BY_ID, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/raidSeason";
@@ -11,6 +12,7 @@ import {
 } from "@/game/coverage";
 import { MISC_ICON } from "@/game/icons";
 import { MAX_APPLICATION_DECLINES } from "@/game/applications";
+import { queryKeys, useMyApplication } from "@/lib/queries";
 import { RoleIcon } from "./RoleIcon";
 import { ApplyCoverageSection } from "./ApplyCoverageSection";
 import { SpecIcon } from "./SpecIcon";
@@ -19,13 +21,18 @@ import { ROLE_LABEL } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
 
 export function ApplyModal({
-  group, current, open, onClose, onApplied,
+  group, current, open, onClose, onApplied, initialMyApp,
 }: {
   group: GroupDTO;
   current: CurrentSelectionDTO | null;
   open: boolean;
   onClose: () => void;
   onApplied?: (application: ApplicationDTO) => void;
+  /** Seeded from the same server render as GroupCard's own initialMyApp -
+   * both share one query (queryKeys.myApplication), so opening the modal
+   * reads GroupCard's already-loaded state instead of firing a second,
+   * duplicate fetch. */
+  initialMyApp?: MyApplicationStateDTO;
 }) {
   const isRaid = group.kind === "raid";
   const dungeon = group.dungeonId ? DUNGEON_BY_ID[group.dungeonId] : undefined;
@@ -34,10 +41,21 @@ export function ApplyModal({
   const [originalNote, setOriginalNote] = useState("");
   const [route, setRoute] = useState("");
   const [originalRoute, setOriginalRoute] = useState("");
-  const [existing, setExisting] = useState<ApplicationDTO | null | undefined>(undefined); // undefined = loading
-  const [declinedCount, setDeclinedCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // See showReceipt below - a pending application opens as a confirmation,
+  // and only an explicit Edit turns it back into a form.
+  const [editing, setEditing] = useState(false);
+  // Separates "you just sent this" from "you had already applied".
+  const [justSent, setJustSent] = useState(false);
+
+  const queryClient = useQueryClient();
+  const { data: myAppData } = useMyApplication(group.id, open, initialMyApp);
+  const existing = myAppData?.application; // undefined = loading, null = none
+  const declinedCount = myAppData?.declinedCount ?? 0;
+  // Why the last application was turned down, shown above the form so it's
+  // read before re-applying rather than after.
+  const lastDecline = myAppData?.lastDecline ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -46,30 +64,21 @@ export function ApplyModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Resets the form draft each time the modal opens for a (possibly
+  // different) group, seeded from whatever the shared query already knows -
+  // in the common case that's GroupCard's own already-loaded data, so this
+  // reads as instant instead of a fresh loading flash.
   useEffect(() => {
     if (!open) return;
     setErr(null);
-    setExisting(undefined);
-    setNote("");
-    setOriginalNote("");
-    setRoute("");
-    setOriginalRoute("");
-    fetch(`/api/groups/${group.id}/my-application`)
-      .then((r) => r.json())
-      .then((data) => {
-        const app: ApplicationDTO | null = data.application ?? null;
-        setExisting(app);
-        setDeclinedCount(data.declinedCount ?? 0);
-        if (app?.status === "pending" && app.note) {
-          setNote(app.note);
-          setOriginalNote(app.note);
-        }
-        if (app?.status === "pending" && app.route) {
-          setRoute(app.route);
-          setOriginalRoute(app.route);
-        }
-      })
-      .catch(() => setExisting(null));
+    setEditing(false);
+    setJustSent(false);
+    const app = existing;
+    setNote(app?.status === "pending" && app.note ? app.note : "");
+    setOriginalNote(app?.status === "pending" && app.note ? app.note : "");
+    setRoute(app?.status === "pending" && app.route ? app.route : "");
+    setOriginalRoute(app?.status === "pending" && app.route ? app.route : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, group.id]);
 
   if (!open) return null;
@@ -121,9 +130,19 @@ export function ApplyModal({
         return;
       }
       const data = await res.json();
-      setExisting(data.application);
+      // Applying again clears the old decline reason - it describes an
+      // application that has just been superseded. GroupCard's own
+      // useMyApplication call shares this same query key, so its Apply
+      // button state updates immediately too, without a refetch.
+      queryClient.setQueryData<MyApplicationStateDTO>(queryKeys.myApplication(group.id), (prev) => ({
+        application: data.application,
+        declinedCount: prev?.declinedCount ?? 0,
+        lastDecline: null,
+      }));
       setOriginalNote(note.trim());
       setOriginalRoute(route.trim());
+      setEditing(false);
+      setJustSent(true);
       onApplied?.(data.application);
     } catch (e) {
       setErr(`Network error: ${e instanceof Error ? e.message : "unknown"}`);
@@ -135,6 +154,19 @@ export function ApplyModal({
   const pending = existing?.status === "pending";
   const outOfChances = existing?.status === "declined" && declinedCount >= MAX_APPLICATION_DECLINES;
   const resolved = existing?.status === "accepted" || outOfChances;
+  // A live application shows as a receipt, not a form - editing it is a
+  // second, deliberate click. Deliberately independent of hasOpenSlot: the
+  // last slot filling up must not hide an application you already have out.
+  const showReceipt = pending && !editing;
+
+  const cancelEdit = () => {
+    // Discard rather than stage the edit - the receipt would otherwise show a
+    // note the group can't actually see.
+    setNote(originalNote);
+    setRoute(originalRoute);
+    setErr(null);
+    setEditing(false);
+  };
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={onClose}>
@@ -179,17 +211,63 @@ export function ApplyModal({
               </div>
             </div>
 
-            {hasOpenSlot ? (
-              <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                Fills the
-                <RoleIcon role={role} size={14} rounded="sm" />
-                <span className="text-gray-300 font-semibold">{ROLE_LABEL[role]}</span> slot.
-              </p>
-            ) : (
-              <p className="text-xs text-rose-300">No open {ROLE_LABEL[role].toLowerCase()} slot in this group.</p>
+            {/* Slot advice is for someone about to apply - on the receipt it
+                reads as if the application you already have is in trouble. */}
+            {!showReceipt &&
+              (hasOpenSlot ? (
+                <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  Fills the
+                  <RoleIcon role={role} size={14} rounded="sm" />
+                  <span className="text-gray-300 font-semibold">{ROLE_LABEL[role]}</span> slot.
+                </p>
+              ) : (
+                <p className="text-xs text-rose-300">No open {ROLE_LABEL[role].toLowerCase()} slot in this group.</p>
+              ))}
+
+            {showReceipt && (
+              <>
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 flex items-start gap-2.5">
+                  <span className="text-emerald-300 text-lg leading-none">✓</span>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-300">
+                      {justSent ? "Application sent" : "Application pending"}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Waiting on the group leader to review it. You&apos;ll get a notification either way.
+                    </p>
+                  </div>
+                </div>
+
+                {existing?.route && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">Your route</div>
+                    <p className="text-xs text-gray-200 font-mono break-all whitespace-pre-wrap max-h-24 overflow-y-auto rounded-md border border-panelborder bg-panel2/40 p-2">
+                      {existing.route}
+                    </p>
+                  </div>
+                )}
+
+                {existing?.note && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide">Your note</div>
+                    <p className="text-sm text-gray-300 rounded-md border border-panelborder bg-panel2/40 p-2 whitespace-pre-wrap italic">
+                      &ldquo;{existing.note}&rdquo;
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(true)} className="btn-ghost flex-1">
+                    Edit application
+                  </button>
+                  <button onClick={onClose} className="btn-gold flex-1">
+                    Done
+                  </button>
+                </div>
+              </>
             )}
 
-            {hasOpenSlot && (
+            {!showReceipt && hasOpenSlot && (
               <>
                 {showRoute && (
                   <div>
@@ -228,6 +306,17 @@ export function ApplyModal({
                 <ApplyCoverageSection label="Party Defensives" have={defensiveCoverage.have} />
                 <ApplyCoverageSection label="External Defensives" have={externalDefensiveCoverage.have} />
 
+                {lastDecline && (
+                  <div className="rounded-md border border-rose-500/40 bg-rose-500/10 p-2.5 space-y-1">
+                    <div className="text-xs text-rose-200">
+                      <span className="font-semibold">Declined:</span> {lastDecline.reasonLabel}
+                    </div>
+                    {lastDecline.note && (
+                      <p className="text-xs text-gray-300 italic">&ldquo;{lastDecline.note}&rdquo;</p>
+                    )}
+                  </div>
+                )}
+
                 {existing?.status === "declined" && !outOfChances && (
                   <p className="text-xs text-amber-300">
                     Declined last time - you can apply again ({MAX_APPLICATION_DECLINES - declinedCount} attempt{MAX_APPLICATION_DECLINES - declinedCount === 1 ? "" : "s"} left).
@@ -250,16 +339,23 @@ export function ApplyModal({
                     {existing!.status === "accepted" ? "Application accepted" : "Declined twice - no more attempts"}
                   </div>
                 ) : (
-                  <button
-                    onClick={submit}
-                    disabled={
-                      submitting ||
-                      (pending && note.trim() === originalNote.trim() && (!showRoute || route.trim() === originalRoute.trim()))
-                    }
-                    className="btn-gold w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {submitting ? "Sending…" : existing?.status === "declined" ? "Apply again" : pending ? "Update application" : "Send application"}
-                  </button>
+                  <div className="flex gap-2">
+                    {editing && (
+                      <button onClick={cancelEdit} disabled={submitting} className="btn-ghost">
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      onClick={submit}
+                      disabled={
+                        submitting ||
+                        (pending && note.trim() === originalNote.trim() && (!showRoute || route.trim() === originalRoute.trim()))
+                      }
+                      className="btn-gold flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {submitting ? "Sending…" : editing ? "Save changes" : existing?.status === "declined" ? "Apply again" : "Send application"}
+                    </button>
+                  </div>
                 )}
               </>
             )}

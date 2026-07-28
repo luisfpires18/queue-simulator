@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { type Role } from "@/game/classes";
+import { roleBudgetFromSlots } from "@/game/slotGroups";
 import { DUNGEONS, DUNGEON_BY_ID } from "@/game/season";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
 import { ErrorModal } from "./ErrorModal";
 import {
-  ROLE_LABEL, ComboEditor, CoveragePanel, SlotPrefPicker, Field, UtilityCoveragePanel,
-  resolveListingOwner, slotLabels, submitListingRequest, toLocalInputValue,
+  ROLE_LABEL, ComboEditor, CoveragePanel, RoleSlotPrefPickers, Field, UtilityCoveragePanel,
+  resolveListingOwner, submitListingRequest, toLocalInputValue,
   useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
@@ -78,8 +79,9 @@ export function ListKeyForm({
     setSlots(openSlotsFor(ownerRole));
   }, [ownerRole]);
 
-  const setSlotPrefs = (i: number, prefs: string[]) =>
-    setSlots((prev) => prev.map((s, idx) => (idx === i ? { ...s, prefs } : s)));
+  // A combo describes the rest of the team, so it can only ever hold what
+  // this listing still has room for - no tank spot when the owner is tanking.
+  const roleBudget = useMemo(() => roleBudgetFromSlots(slots), [slots]);
 
   // Pre-made-group combos (2-4 members, an alternative to per-slot picks) -
   // a desired comp is a bundle of specs (not your own characters), e.g. a
@@ -126,8 +128,6 @@ export function ListKeyForm({
     // Force a full navigation so a stale client bundle can't leave us hanging.
     window.location.assign("/runs");
   };
-
-  const labels = slotLabels(slots);
 
   return (
     <div className="space-y-6">
@@ -315,17 +315,7 @@ export function ListKeyForm({
       {prefMode === "slots" ? (
         <div>
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Open slots</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {slots.map((s, i) => (
-              <SlotPrefPicker
-                key={i}
-                role={s.role}
-                label={labels[i]}
-                value={s.prefs}
-                onChange={(v) => setSlotPrefs(i, v)}
-              />
-            ))}
-          </div>
+          <RoleSlotPrefPickers slots={slots} setSlots={setSlots} />
         </div>
       ) : (
         /* pre-made group combos: an alternative to filling slots one at a time */
@@ -339,6 +329,7 @@ export function ListKeyForm({
               key={combo.key}
               members={combo.members}
               ownerSpecId={ownerSpecId}
+              roleBudget={roleBudget}
               onAdd={(specId) => addComboMember(combo.key, specId)}
               onRemove={(i) => removeComboMember(combo.key, i)}
               onDelete={() => removeCombo(combo.key)}

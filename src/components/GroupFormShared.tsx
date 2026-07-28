@@ -8,6 +8,7 @@ import {
   computeDispelCoverage, computeEnemyDispelCoverage,
   type CoverageItem, type CoverageStatus,
 } from "@/game/coverage";
+import { groupSlotsByRole, roleBudgetFromSlots, rolesStillAvailable, setPrefsForRole } from "@/game/slotGroups";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
@@ -114,12 +115,37 @@ export function useListingCoverage(ownerSpecId: string, slots: FormSlot[], combo
   return { buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage };
 }
 
-/** DPS slots labeled "DPS #1/#2/#3" when there's more than one; other roles
- * (and a lone DPS slot) keep the plain role label. */
-export function slotLabels(slots: FormSlot[]): string[] {
-  const dpsTotal = slots.filter((s) => s.role === "DPS").length;
-  let d = 0;
-  return slots.map((s) => (s.role === "DPS" && dpsTotal > 1 ? `DPS #${++d}` : ROLE_LABEL[s.role]));
+/** One spec-preference picker per role rather than per slot - see
+ * src/game/slotGroups.ts for why. Returns the groups to render plus the
+ * setter that writes a role's list back onto every slot of that role. */
+export function useRoleSlotPrefs(slots: FormSlot[], setSlots: React.Dispatch<React.SetStateAction<FormSlot[]>>) {
+  const roleGroups = useMemo(() => groupSlotsByRole(slots), [slots]);
+  const setRolePrefs = (role: Role, prefs: string[]) =>
+    setSlots((prev) => setPrefsForRole(prev, role, prefs));
+  return { roleGroups, setRolePrefs };
+}
+
+/** The picker grid both listing forms and the team form render. */
+export function RoleSlotPrefPickers({
+  slots, setSlots,
+}: {
+  slots: FormSlot[];
+  setSlots: React.Dispatch<React.SetStateAction<FormSlot[]>>;
+}) {
+  const { roleGroups, setRolePrefs } = useRoleSlotPrefs(slots, setSlots);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {roleGroups.map((g) => (
+        <SlotPrefPicker
+          key={g.role}
+          role={g.role}
+          label={ROLE_LABEL[g.role]}
+          value={g.prefs}
+          onChange={(v) => setRolePrefs(g.role, v)}
+        />
+      ))}
+    </div>
+  );
 }
 
 /** POST/PATCH a listing to /api/groups[/id]. Returns the user-facing error
@@ -172,10 +198,14 @@ export function UtilityCoveragePanel({ coverage }: { coverage: ReturnType<typeof
 }
 
 export function ComboEditor({
-  members, ownerSpecId, maxMembers = 4, onAdd, onRemove, onDelete,
+  members, ownerSpecId, roleBudget, maxMembers = 4, onAdd, onRemove, onDelete,
 }: {
   members: ComboMember[];
   ownerSpecId: string;
+  /** Roles this listing can still take - the party minus the owner's own
+   * spot (see roleBudgetFromSlots). A tank listing a key offers no tank tab
+   * at all; a dps offers the two remaining dps rather than three. */
+  roleBudget: Record<Role, number>;
   /** M+ combos cap at a duo/trio/quartet (4); raid combos allow a bigger "bring your core" bundle. */
   maxMembers?: number;
   onAdd: (specId: string) => void;
@@ -184,6 +214,13 @@ export function ComboEditor({
 }) {
   const [picking, setPicking] = useState(false);
   const [pickRole, setPickRole] = useState<Role>("DPS");
+
+  const availableRoles = rolesStillAvailable(roleBudget, members);
+  // Derived, not state: the preferred tab stops being offered the moment this
+  // combo fills that role up, and an effect to correct it would just fight
+  // the render it's correcting.
+  const activeRole = availableRoles.includes(pickRole) ? pickRole : availableRoles[0];
+  const canAdd = members.length < maxMembers && availableRoles.length > 0;
 
   return (
     <div className="rounded-lg border border-panelborder bg-panel2/40 p-3 space-y-2">
@@ -203,7 +240,7 @@ export function ComboEditor({
             </div>
           );
         })}
-        {members.length < maxMembers && (
+        {canAdd && (
           <button
             onClick={() => setPicking((v) => !v)}
             className="rounded-md border border-dashed border-panelborder hover:border-gold/60 px-3 py-1 text-xs text-gray-400"
@@ -212,15 +249,15 @@ export function ComboEditor({
           </button>
         )}
       </div>
-      {picking && (
+      {picking && activeRole && (
         <div className="pt-2 border-t border-panelborder/60 space-y-2">
           <div className="flex gap-1.5">
-            {(["TANK", "HEALER", "DPS"] as Role[]).map((r) => (
+            {availableRoles.map((r) => (
               <button
                 key={r} onClick={() => setPickRole(r)}
                 className={cn(
                   "chip border text-[11px]",
-                  pickRole === r ? "border-gold text-white bg-panel2" : "border-panelborder text-gray-400"
+                  activeRole === r ? "border-gold text-white bg-panel2" : "border-panelborder text-gray-400"
                 )}
               >
                 {ROLE_LABEL[r]}
@@ -229,9 +266,15 @@ export function ComboEditor({
           </div>
           <div className="max-h-48 overflow-y-auto">
             <SpecPickButtons
-              specs={SPECS_BY_ROLE[pickRole].filter((sp) => sp.id !== ownerSpecId)}
+              specs={SPECS_BY_ROLE[activeRole].filter((sp) => sp.id !== ownerSpecId)}
               size={28}
-              onPick={(specId) => { onAdd(specId); if (members.length + 1 >= maxMembers) setPicking(false); }}
+              onPick={(specId) => {
+                onAdd(specId);
+                // Close once this was the last spot the combo could hold -
+                // either overall, or the last of the only role still open.
+                const roleFull = rolesStillAvailable(roleBudget, [...members, { role: activeRole, specId }]).length === 0;
+                if (members.length + 1 >= maxMembers || roleFull) setPicking(false);
+              }}
             />
           </div>
         </div>

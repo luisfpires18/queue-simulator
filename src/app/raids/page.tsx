@@ -1,26 +1,28 @@
 import Link from "next/link";
-import { auth } from "@/auth";
 import { listGroups } from "@/data/groups";
-import { getMyApplicationsByGroup } from "@/data/applications";
-import { ensureUser, getCurrentSelection } from "@/data/users";
+import { getMyApplicationsByGroup, getPendingCountsByGroup } from "@/data/applications";
+import { getCurrentSelection } from "@/data/users";
+import { getSessionUser } from "@/server/http";
 import { RaidBoardClient } from "@/components/RaidBoardClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function RaidsPage() {
-  const [groups, session] = await Promise.all([listGroups(), auth()]);
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  // Checking bnetId, not just user - a session can carry a `user` object
-  // with no bnetId (e.g. a stale cookie predating this field), and
-  // ensureUser(bnetId!, ...) would otherwise crash with a Prisma validation
-  // error on an undefined where-clause key instead of just showing logged-out.
-  const loggedIn = Boolean(s?.user && s?.bnetId);
-
-  const user = loggedIn ? await ensureUser(s!.bnetId!, s!.battletag) : null;
-  const current = user ? await getCurrentSelection(user.id) : null;
-  // Seeds each card's Apply-button state into the first paint - without it,
-  // every card flashes "Apply" until its own /my-application fetch lands.
-  const myApps = user ? await getMyApplicationsByGroup(user.id, groups.map((g) => g.id)) : undefined;
+  // Cached - see the same block in runs/page.tsx.
+  const [groups, ctx] = await Promise.all([listGroups(), getSessionUser()]);
+  const loggedIn = ctx != null;
+  const user = ctx?.user ?? null;
+  // Independent of each other - see the same block in runs/page.tsx.
+  const [current, myApps, pendingCounts] = user
+    ? await Promise.all([
+        getCurrentSelection(user.id),
+        // Seeds each card's Apply-button state into the first paint - without
+        // it every card flashes "Apply" until its /my-application fetch lands.
+        getMyApplicationsByGroup(user.id, groups.map((g) => g.id)),
+        // Seeds the owner's pending-requests badge.
+        getPendingCountsByGroup(groups.filter((g) => g.ownerUserId === user.id).map((g) => g.id)),
+      ])
+    : [null, undefined, undefined];
 
   return (
     <div>
@@ -33,7 +35,7 @@ export default async function RaidsPage() {
           <Link href="/list?kind=raid" className="btn-gold">List your Raid</Link>
         )}
       </div>
-      <RaidBoardClient initial={groups} canList={loggedIn} current={current} viewerUserId={user?.id ?? null} initialMyApps={myApps} />
+      <RaidBoardClient initial={groups} canList={loggedIn} current={current} viewerUserId={user?.id ?? null} initialMyApps={myApps} initialPendingCounts={pendingCounts} />
     </div>
   );
 }

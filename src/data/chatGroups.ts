@@ -2,6 +2,7 @@
 // leave, delete. Mirrors src/data/network.ts's style — plain string state
 // where relevant, thin transactions, notifyUser + networkBroadcaster fired
 // from the service layer, never from route handlers.
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/server/notifications/dispatch";
 import { networkBroadcaster, type NetworkEvent } from "@/server/network/broadcaster";
@@ -142,8 +143,8 @@ export async function deleteChatGroup(chatGroupId: string, ownerUserId: string):
 
 /** The caller's groups, each with a member count, unread count (messages
  * from others since the caller's last-read watermark), and a last-message
- * preview. */
-export async function listMyChatGroups(userId: string): Promise<ChatGroupSummaryDTO[]> {
+ * preview. React-cached per request - AccountMenu renders twice per page. */
+export const listMyChatGroups = cache(async (userId: string): Promise<ChatGroupSummaryDTO[]> => {
   const memberships = await prisma.chatGroupMember.findMany({
     where: { userId },
     include: {
@@ -176,7 +177,7 @@ export async function listMyChatGroups(userId: string): Promise<ChatGroupSummary
       };
     })
   );
-}
+});
 
 /** Full detail for one group, gated on the viewer being a member (null
  * otherwise — the caller should treat that as a 404). Each member's

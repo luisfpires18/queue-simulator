@@ -22,6 +22,22 @@ model User {
   discord       String? // handle only (e.g. "name#0001" or "@name") - display text, not a link
   twitch        String? // channel login (e.g. "twitch.tv/<this>") - see src/data/twitch.ts for live-status lookup
 
+  // ---- profile presentation ----
+  // Banner behind the profile header. "upload" uses `bannerImage`; "class"
+  // (the default, and the fallback whenever the upload 404s) renders the
+  // generated class-colour banner in src/game/banners.ts, so there is always
+  // something to draw. `bannerClassId` is a ClassId; null means "follow my
+  // main character's class".
+  bannerType    String  @default("class") // "class" | "upload"
+  bannerClassId String?
+  bannerImage   String? // stored filename under UPLOAD_DIR, never a path
+
+  aboutMe String? // free text shown on the profile, max 1000 chars app-side
+
+  // Only consulted while the user has no TeamMember row - an actual team
+  // always wins over "looking for one".
+  lftStatus String @default("none") // "none" | "lft"
+
   // Global "current character" for List-a-key / Apply, set from the navbar
   // picker. Not a Prisma @relation — getCurrentSelection() in src/data/source.ts
   // always re-validates against the live roster and self-heals if this id is
@@ -45,6 +61,13 @@ model User {
   ownedChatGroups       ChatGroup[]        @relation("ChatGroupsOwned")
   chatGroupMemberships  ChatGroupMember[]
   sentChatGroupMessages ChatGroupMessage[]
+
+  ownedTeams       Team[]            @relation("TeamsOwned")
+  teamMembership   TeamMember? // at most one — see TeamMember.userId @unique
+  teamApplications TeamApplication[]
+
+  declinesReceived DeclineRecord[] @relation("DeclinesReceived")
+  declinesGiven    DeclineRecord[] @relation("DeclinesGiven")
 }
 
 model PushSubscription {
@@ -131,6 +154,8 @@ model Character {
   applications Application[]
   soloQueueEntries SoloQueueEntry[]
   seasonSnapshots  CharacterSeasonSnapshot[]
+  teamMemberships  TeamMember[]
+  teamApplications TeamApplication[]
   createdAt    DateTime             @default(now())
 
   @@unique([userId, realm, name])
@@ -496,4 +521,153 @@ model RunMember {
   role                String? // derived from specId, denormalized like CharacterSpecTrack.role
 
   @@unique([runId, blizzardCharacterId])
+}
+
+// A persistent Mythic+ roster, listed on /teams and applied to the same way a
+// Group is. Distinct from both `Group` (one throwaway key/raid night,
+// expires) and `ChatGroup` (a private chat thread with no listing side).
+model Team {
+  id          String @id @default(cuid())
+  ownerUserId String
+  owner       User   @relation("TeamsOwned", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String? // free-text recruitment notes
+  // Fixed for now (see DEFAULT_TEAM_ICON) - the picker in src/game/teamIcons.ts
+  // is written and validated server-side, it just isn't exposed in the form yet.
+  iconSlug String @default("inv_misc_groupneedmore")
+
+  language  String? // ISO 639-1, from the curated list in src/game/languages.ts
+  voiceChat String? // free text - "Discord", "TeamSpeak, mic required", etc
+
+  // Same vocabulary and semantics as Group's — advisory, evaluated by the
+  // shared helpers in src/game/achievements.ts / src/server/guards.ts.
+  requirementType String? // "rating" | "resilient" | "custom", null = none
+  reqRating       Int?
+  reqLevel        Int?
+  reqExtraCount   Int?
+  reqExtraLevel   Int?
+
+  // Open recruitment slots: JSON [{ role, prefs: [specId] }], parsed by the
+  // same parseSlots() the Group board uses.
+  slots String @default("[]")
+
+  // "open"     - listed on /teams, recruiting
+  // "full"     - every spot taken, so it unlists itself; still a real team,
+  //              members keep their membership and it shows on their profiles
+  // "delisted" - the owner tore it down; membership rows are removed too
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+
+  members      TeamMember[]
+  applications TeamApplication[]
+
+  @@index([status])
+  @@index([ownerUserId, status])
+}
+
+// Deliberately keyed on userId, not characterId like GroupMember: the
+// one-team-per-user rule and the profile status chip are per-account, so the
+// @unique here is the actual enforcement point for both.
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // The character this member represents the team with — informational, and
+  // freely re-picked; it does not gate anything.
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  role   String // TANK | HEALER | DPS
+  specId String?
+
+  joinedAt DateTime @default(now())
+
+  @@index([teamId])
+  @@index([characterId])
+}
+
+// The vocabulary a group/team owner must pick from when declining someone.
+// Unlike FeatureFlag and AppSetting - whose vocabularies live in TypeScript
+// (src/game/featureFlags.ts, src/game/season.ts) - this one is edited at
+// runtime from the admin panel, so it has to be rows.
+model DeclineReason {
+  id        String   @id @default(cuid())
+  label     String
+  sortOrder Int      @default(0)
+  // Archived rather than deleted: history rows keep a reasonId pointing here,
+  // and an admin retiring a reason must not rewrite what already happened.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([active, sortOrder])
+}
+
+// One row per decline, readable from both sides (the applicant sees what they
+// were told, the owner sees what they said).
+//
+// Deliberately denormalized: there is no common parent for Application and
+// TeamApplication, SQLite can't express a polymorphic FK, TeamApplication is
+// upserted on re-apply so its row mutates underneath any reference, and
+// Application cascades from Character - which is genuinely deleted on roster
+// re-sync. Anything joined would silently vanish. Same reasoning as
+// CharacterSeasonSnapshot above.
+model DeclineRecord {
+  id String @id @default(cuid())
+
+  applicantUserId String
+  applicant       User   @relation("DeclinesReceived", fields: [applicantUserId], references: [id], onDelete: Cascade)
+
+  declinedByUserId String
+  declinedBy       User   @relation("DeclinesGiven", fields: [declinedByUserId], references: [id], onDelete: Cascade)
+
+  listingKind  String // "mplus" | "raid" | "team"
+  listingTitle String // Group.title / Team.name, frozen at decline time
+  listingId    String // deep link, for as long as the listing still exists
+
+  reasonId    String? // null once a reason row is hard-deleted
+  reasonLabel String // frozen - renaming a reason must not rewrite history
+  note        String?
+
+  // The character they applied with, also frozen.
+  characterName  String
+  characterRealm String
+  classId        String
+  role           String
+  specId         String
+
+  createdAt DateTime @default(now())
+
+  @@index([applicantUserId, createdAt])
+  @@index([declinedByUserId, createdAt])
+}
+
+model TeamApplication {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  applicantUserId String
+  applicant       User   @relation(fields: [applicantUserId], references: [id], onDelete: Cascade)
+
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  role   String // TANK | HEALER | DPS
+  specId String
+  note   String?
+
+  status    String   @default("pending") // pending | accepted | declined
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One row per applicant per team, refreshed in place on re-apply — the
+  // same convention createApplication() uses for Groups.
+  @@unique([teamId, applicantUserId])
+  @@index([teamId, status])
+  @@index([applicantUserId, status])
 }

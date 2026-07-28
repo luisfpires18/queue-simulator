@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Role } from "@/game/classes";
 import { ApiClientError, apiPost } from "@/lib/api-client";
 import { usePendingApplications } from "@/lib/queries";
 import { PaginationChips } from "./ui/PaginationChips";
+import { DeclineDialog } from "./DeclineDialog";
 import { RoleIcon } from "./RoleIcon";
 import { RatingDetails } from "./RatingDetails";
 import { cn } from "@/lib/utils";
@@ -21,10 +22,14 @@ const PAGE_SIZE = 5;
  * ranked by rating (highest first) with the applicant's rating details,
  * plus Accept/Decline. */
 export function PendingRequestsModal({
-  groupId, dungeonId, onResolved,
+  groupId, dungeonId, initialCount, onResolved,
 }: {
   groupId: string;
   dungeonId?: string | null;
+  /** Server-rendered pending count (see getPendingCountsByGroup) - lets the
+   * badge render in the first paint instead of waiting on the query below,
+   * which is the last one to fire on a board page. */
+  initialCount?: number;
   onResolved: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -32,33 +37,33 @@ export function PendingRequestsModal({
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  // The applicant whose decline dialog is open - declining now needs a reason.
+  const [declining, setDeclining] = useState<{ id: string; name: string } | null>(null);
   const queryClient = useQueryClient();
 
-  // Always mounted (never gated on `open`) so the badge count loads with the
-  // card; tab/page changes re-key the query and fetch on their own.
-  const { data, refetch } = usePendingApplications(groupId, activeTab, page, PAGE_SIZE);
+  // The trigger button + its badge are always mounted (see initialCount
+  // below), but the list itself only needs to fetch once the modal is
+  // actually open - enabled: open both saves the request on every card's
+  // page load and refetches fresh data each time it reopens (staleTime 0).
+  const { data } = usePendingApplications(groupId, activeTab, page, PAGE_SIZE, open);
   const apps = data?.applications ?? [];
   const total = data?.total ?? null; // null = not loaded yet (this tab)
   const countsByRole = data?.countsByRole ?? null;
-
-  // Re-opening the modal always shows fresh data, like the old per-open load.
-  useEffect(() => {
-    if (open) refetch();
-  }, [open, refetch]);
 
   function switchTab(tab: Tab) {
     setActiveTab(tab);
     setPage(1);
   }
 
-  async function resolve(id: string, action: "accept" | "decline") {
+  async function resolve(id: string, action: "accept" | "decline", payload?: unknown) {
     setBusyId(id);
     setResolveError(null);
     try {
-      await apiPost(`/api/applications/${id}/${action}`);
+      await apiPost(`/api/applications/${id}/${action}`, payload);
       // the accepted/declined row may have been the page's last one — step back if so
       const nextPage = apps.length === 1 && page > 1 ? page - 1 : page;
       setPage(nextPage);
+      setDeclining(null);
       queryClient.invalidateQueries({ queryKey: ["pending-applications", groupId] });
       onResolved();
     } catch (e) {
@@ -71,10 +76,14 @@ export function PendingRequestsModal({
   }
 
   const totalPages = total != null ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : 1;
-  const totalAcrossRoles = countsByRole ? countsByRole.TANK + countsByRole.HEALER + countsByRole.DPS : null;
+  // Falls back to the server-rendered count until the query resolves, so the
+  // badge is present in the first paint rather than popping in later.
+  const totalAcrossRoles = countsByRole
+    ? countsByRole.TANK + countsByRole.HEALER + countsByRole.DPS
+    : initialCount ?? null;
   const tabCount = (tab: Tab) => (tab === "ALL" ? totalAcrossRoles : countsByRole?.[tab]) ?? 0;
 
-  // Hides both while the count is still loading (null) and once it's
+  // Hides both while the count is still unknown (null) and once it's
   // confirmed empty (0) - only null vs. 0 differ, but treating them the same
   // here matters: rendering the chip on `null` was the flicker bug (it'd
   // show unconditionally for an instant on every page load, then vanish the
@@ -196,7 +205,7 @@ export function PendingRequestsModal({
                           Accept
                         </button>
                         <button
-                          onClick={() => resolve(a.id, "decline")}
+                          onClick={() => setDeclining({ id: a.id, name: a.characterName })}
                           disabled={busy}
                           className="chip border flex-1 justify-center border-rose-500/50 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
                         >
@@ -221,6 +230,14 @@ export function PendingRequestsModal({
           </div>
         </div>
       )}
+
+      <DeclineDialog
+        open={declining !== null}
+        applicantName={declining?.name ?? ""}
+        submitting={busyId != null}
+        onCancel={() => setDeclining(null)}
+        onConfirm={(reasonId, note) => declining && resolve(declining.id, "decline", { reasonId, note })}
+      />
     </>
   );
 }

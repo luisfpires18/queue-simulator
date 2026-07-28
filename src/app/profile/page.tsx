@@ -1,40 +1,53 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/users";
-import { getUserCharacters, getSpecTracks } from "@/data/characters";
-import { getLiveStreamInfo } from "@/data/twitch";
+import { getSessionUser } from "@/server/http";
+import { getUserCharacters, getSpecTracksByCharacter } from "@/data/characters";
 import { getCurrentSeasonId } from "@/data/appSettings";
+import { getMyTeam } from "@/data/teams";
+import { listDeclineRecords } from "@/data/declineRecords";
 import { SEASONS } from "@/game/season";
 import { ProfileClient } from "@/components/profile/ProfileClient";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
-import { TwitchLivePreview } from "@/components/profile/TwitchLivePreview";
+import { TwitchLiveBadge } from "@/components/profile/TwitchLiveBadge";
+import { TwitchLivePreviewGate } from "@/components/profile/TwitchLivePreviewGate";
 import { SeasonSelector } from "@/components/profile/SeasonSelector";
 import { bestSpecFor } from "@/game/roster";
 import { highestCharacterRating } from "@/game/rating";
 
 export const dynamic = "force-dynamic";
 
+const FEEDBACK_PAGE_SIZE = 10;
+
 export default async function ProfilePage() {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-
-  // Checking bnetId, not just user - a session can carry a `user` object
-  // with no bnetId (stale cookie predating this field); ensureUser(bnetId!,
-  // ...) below would otherwise crash instead of just bouncing to login.
-  if (!s?.user || !s?.bnetId) redirect("/login");
-
-  const user = await ensureUser(s.bnetId!, s.battletag);
-  const characters = await getUserCharacters(user.id);
-  const withTracks = await Promise.all(
-    characters.map(async (c) => ({ ...c, specTracks: await getSpecTracks(c.id) }))
-  );
+  // Cached - see the same block in runs/page.tsx.
+  const ctx = await getSessionUser();
+  if (!ctx) redirect("/login");
+  const { user, session: s } = ctx;
+  // All independent - awaiting them in sequence made the server render
+  // round trips deep for no reason (see the same block in runs/page.tsx).
+  // The decline history seeds the Feedback tab's default (received/page-1)
+  // view - see ProfileClient/FeedbackTab.
+  const [characters, currentSeasonId, myTeam, feedback] = await Promise.all([
+    getUserCharacters(user.id),
+    getCurrentSeasonId(),
+    getMyTeam(user.id),
+    listDeclineRecords(user.id, "received", 1, FEEDBACK_PAGE_SIZE),
+  ]);
+  const tracksByChar = await getSpecTracksByCharacter(characters.map((c) => c.id));
+  const withTracks = characters.map((c) => ({ ...c, specTracks: tracksByChar.get(c.id) ?? [] }));
   const displayName = s.battletag?.split("#")[0] ?? "Profile";
   const mainChar = withTracks.find((c) => c.isMain) ?? withTracks[0] ?? null;
-  // Best-effort, same rationale as the public profile page - Twitch being
-  // slow or unconfigured just hides the preview, never fails the page.
-  const twitchLive = user.twitch ? await getLiveStreamInfo(user.twitch).catch(() => null) : null;
-
-  const currentSeasonId = await getCurrentSeasonId();
+  const initialSettings = {
+    showBattletag: user.showBattletag,
+    country: user.country,
+    discord: user.discord,
+    twitch: user.twitch,
+    aboutMe: user.aboutMe,
+    bannerType: user.bannerType,
+    bannerClassId: user.bannerClassId,
+    bannerImage: user.bannerImage,
+    lftStatus: user.lftStatus,
+  };
 
   return (
     <div className="space-y-5">
@@ -55,12 +68,30 @@ export default async function ProfilePage() {
         country={user.country}
         discord={user.discord}
         twitch={user.twitch}
-        twitchLive={twitchLive != null}
+        twitchLiveBadge={
+          <Suspense fallback={null}>
+            <TwitchLiveBadge twitch={user.twitch} />
+          </Suspense>
+        }
         main={mainChar ? { name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null } : null}
         highestRating={highestCharacterRating(withTracks)}
+        banner={{ bannerType: user.bannerType, bannerClassId: user.bannerClassId, bannerImage: user.bannerImage }}
+        aboutMe={user.aboutMe}
+        team={myTeam}
+        lftStatus={user.lftStatus}
+        viewerUserId={user.id}
+        isOwnProfile
       />
-      {twitchLive && user.twitch && <TwitchLivePreview twitch={user.twitch} live={twitchLive} />}
-      <ProfileClient initial={withTracks} currentSeasonId={currentSeasonId} />
+      <Suspense fallback={null}>
+        <TwitchLivePreviewGate twitch={user.twitch} />
+      </Suspense>
+      <ProfileClient
+        initial={withTracks}
+        currentSeasonId={currentSeasonId}
+        hasTeam={myTeam != null}
+        initialSettings={initialSettings}
+        initialFeedback={{ ...feedback, page: 1, pageSize: FEEDBACK_PAGE_SIZE }}
+      />
     </div>
   );
 }

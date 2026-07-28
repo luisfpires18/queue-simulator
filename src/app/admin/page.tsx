@@ -3,6 +3,7 @@ import { getBnetSession } from "@/server/http";
 import { isAdminBattletag } from "@/lib/admin";
 import { listUsers } from "@/data/admin";
 import { listFeatureFlags } from "@/data/featureFlags";
+import { listAllDeclineReasons } from "@/data/declineReasons";
 import { getCurrentSeasonId } from "@/data/appSettings";
 import { SEASONS } from "@/game/season";
 import { AdminClient } from "@/components/admin/AdminClient";
@@ -14,9 +15,10 @@ export default async function AdminPage() {
   // 404 rather than a login prompt - no page for anyone else to even notice.
   if (!isAdminBattletag(session?.battletag)) notFound();
 
-  const [initial, flags, currentSeasonId] = await Promise.all([
+  const [initial, flags, declineReasons, currentSeasonId] = await Promise.all([
     listUsers({ page: 1, pageSize: 20, filter: "all" }),
     listFeatureFlags(),
+    listAllDeclineReasons(),
     getCurrentSeasonId(),
   ]);
 
@@ -30,6 +32,7 @@ export default async function AdminPage() {
         initialUsers={initial.rows}
         initialTotal={initial.total}
         initialFlags={flags}
+        initialDeclineReasons={declineReasons}
         seasons={SEASONS}
         initialCurrentSeasonId={currentSeasonId}
       />

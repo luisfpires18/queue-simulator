@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSharedClock } from "@/lib/useSharedClock";
 import { cn } from "@/lib/utils";
 
 type Tier = "green" | "yellow" | "red";
@@ -63,24 +63,12 @@ const WarningIcon = () => (
 
 /** Live countdown to a listing's start time with a red/yellow/green
  * readiness dot - green when forming now or starting within 45 minutes,
- * yellow 45m-2h out, red 2h+ out or already expired. Ticks every second
- * while a startsAt is set; a "forming now" listing instead shows how long
- * it's been up (minute granularity, so it only needs to tick every 30s).
- *
- * `now` starts null and is only ever set from an effect (never from the
- * initializer) - Date.now() read during the initial render would differ
- * between the server-rendered HTML and the client's first render, causing a
- * hydration mismatch. Rendering nothing until the effect fires keeps the
- * server and client's first paint identical; the real countdown appears an
- * instant later once mounted. */
+ * yellow 45m-2h out, red 2h+ out or already expired. A "forming now" listing
+ * instead shows how long it's been up. Ticks off useSharedClock (one shared
+ * per-second timer for every instance on the board) rather than owning its
+ * own interval - see that hook for why `now` starts null. */
 export function CountdownLight({ startsAt, createdAt }: { startsAt: string | null; createdAt: string }) {
-  const [now, setNow] = useState<number | null>(null);
-
-  useEffect(() => {
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), startsAt ? 1000 : 30_000);
-    return () => clearInterval(id);
-  }, [startsAt]);
+  const now = useSharedClock();
 
   if (now == null) return null;
 

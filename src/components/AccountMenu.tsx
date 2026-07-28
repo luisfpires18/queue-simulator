@@ -1,10 +1,7 @@
 import Link from "next/link";
-import { auth, signOut, bnetEnabled } from "@/auth";
-import { ensureUser, getCurrentSelection } from "@/data/users";
-import { getUserCharacters, getSpecTracks } from "@/data/characters";
-import { listFriends, listIncomingRequests, listOutgoingRequests } from "@/data/network";
-import { listMyChatGroups } from "@/data/chatGroups";
-import { getCurrentSeasonId } from "@/data/appSettings";
+import { signOut, bnetEnabled } from "@/auth";
+import { getAccountMenuData } from "@/data/accountMenu";
+import { getSessionUser } from "@/server/http";
 import { seasonById } from "@/game/season";
 import { AccountMenuClient } from "./AccountMenuClient";
 
@@ -13,10 +10,11 @@ import { AccountMenuClient } from "./AccountMenuClient";
  * logout). Resolves everything a logged-in user's dropdown needs in one
  * pass; logged-out just gets a login link, same as the old HeaderAuth. */
 export async function AccountMenu() {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
+  // Cached - the layout renders this component twice (desktop + mobile
+  // drawer) and resolves the same session itself, so all three share one call.
+  const ctx = await getSessionUser();
 
-  if (!s?.bnetId) {
+  if (!ctx) {
     if (!bnetEnabled) {
       return (
         <Link
@@ -35,17 +33,9 @@ export async function AccountMenu() {
     );
   }
 
-  const user = await ensureUser(s.bnetId, s.battletag);
-  const chars = (await getUserCharacters(user.id)).filter((c) => c.bucket !== "hidden");
-  const characters = await Promise.all(chars.map(async (c) => ({ ...c, specTracks: await getSpecTracks(c.id) })));
-  const current = await getCurrentSelection(user.id);
-  const [friends, incoming, outgoing, chatGroups, currentSeasonId] = await Promise.all([
-    listFriends(user.id),
-    listIncomingRequests(user.id),
-    listOutgoingRequests(user.id),
-    listMyChatGroups(user.id),
-    getCurrentSeasonId(),
-  ]);
+  const { user, session: s } = ctx;
+  const { characters, current, friends, incoming, outgoing, chatGroups, currentSeasonId } =
+    await getAccountMenuData(user.id);
   const season = seasonById(currentSeasonId);
   const displayName = s.battletag?.split("#")[0] ?? "Account";
 

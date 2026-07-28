@@ -1,30 +1,16 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/users";
+import { getSessionUser } from "@/server/http";
 import { getPublicCharacters } from "@/data/characters";
-import { fetchCharacterTitles } from "@/data/blizzardApp";
 import { fetchRaidProgression } from "@/data/raiderio";
-import { getLiveStreamInfo } from "@/data/twitch";
-import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
-import { TwitchLivePreview } from "@/components/profile/TwitchLivePreview";
+import { R1TitlesStat } from "@/components/profile/R1TitlesStat";
+import { TwitchLiveBadge } from "@/components/profile/TwitchLiveBadge";
+import { TwitchLivePreviewGate } from "@/components/profile/TwitchLivePreviewGate";
 import { AddFriendButton } from "@/components/network/AddFriendButton";
 import { bestSpecFor } from "@/game/roster";
 import { highestCharacterRating } from "@/game/rating";
-
-// Titles are account-wide, so one character's title list already reflects
-// the whole account - no need to fetch per character on a multi-alt roster.
-// Best-effort: a Blizzard hiccup shouldn't fail the whole profile page, it
-// should just hide the stat (null, distinct from a genuine 0).
-async function fetchR1TitleCount(region: string, realmSlug: string, name: string): Promise<number | null> {
-  try {
-    const titles = await fetchCharacterTitles(region, realmSlug, name);
-    return titles.filter((t) => MPLUS_R1_TITLE_IDS.includes(t.id)).length;
-  } catch {
-    return null;
-  }
-}
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +22,15 @@ export default async function PublicProfilePage({
   params: Promise<{ realmSlug: string; name: string }>;
 }) {
   const { realmSlug, name } = await params;
-  const data = await getPublicCharacters(decodeURIComponent(realmSlug), decodeURIComponent(name));
+  // Independent of each other - getSessionUser is cached (see the same
+  // block in runs/page.tsx) and the layout already triggers it, so this is
+  // free more often than not.
+  const [data, ctx] = await Promise.all([
+    getPublicCharacters(decodeURIComponent(realmSlug), decodeURIComponent(name)),
+    getSessionUser(),
+  ]);
   if (!data) notFound();
-
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  const viewer = s?.bnetId ? await ensureUser(s.bnetId, s.battletag) : null;
+  const viewer = ctx?.user ?? null;
 
   // Fallback only for characters WCL gave us nothing for (most commonly:
   // their logs are private) - not a blanket extra API call per character.
@@ -57,10 +46,6 @@ export default async function PublicProfilePage({
   for (const c of characters) byBucket[c.bucket]?.push(c);
   const mainChar = characters.find((c) => c.isMain) ?? characters[0] ?? null;
   const displayName = data.battletag?.split("#")[0] ?? mainChar?.name ?? "Player";
-  const r1Titles = mainChar ? await fetchR1TitleCount(mainChar.region, mainChar.realmSlug, mainChar.name) : null;
-  // Best-effort, same rationale as fetchR1TitleCount - Twitch being slow or
-  // unconfigured just hides the preview, never fails the profile.
-  const twitchLive = data.twitch ? await getLiveStreamInfo(data.twitch).catch(() => null) : null;
 
   return (
     <div className="space-y-5">
@@ -76,13 +61,29 @@ export default async function PublicProfilePage({
           country={data.country}
           discord={data.discord}
           twitch={data.twitch}
-          twitchLive={twitchLive != null}
+          twitchLiveBadge={
+            <Suspense fallback={null}>
+              <TwitchLiveBadge twitch={data.twitch} />
+            </Suspense>
+          }
           main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null }}
           highestRating={highestCharacterRating(characters)}
-          r1Titles={r1Titles}
+          r1TitlesSlot={
+            <Suspense fallback={null}>
+              <R1TitlesStat region={mainChar.region} realmSlug={mainChar.realmSlug} name={mainChar.name} />
+            </Suspense>
+          }
+          banner={{ bannerType: data.bannerType, bannerClassId: data.bannerClassId, bannerImage: data.bannerImage }}
+          aboutMe={data.aboutMe}
+          team={data.team}
+          lftStatus={data.lftStatus}
+          viewerUserId={viewer?.id ?? null}
+          isOwnProfile={viewer?.id === data.userId}
         />
       )}
-      {twitchLive && data.twitch && <TwitchLivePreview twitch={data.twitch} live={twitchLive} />}
+      <Suspense fallback={null}>
+        <TwitchLivePreviewGate twitch={data.twitch} />
+      </Suspense>
       {(["main", "alt"] as const).map((bucket) =>
         byBucket[bucket].length ? (
           <div key={bucket} className="panel p-4">

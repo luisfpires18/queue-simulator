@@ -9,14 +9,28 @@ import { runMatchPass } from "@/server/soloQueue/matchRunner";
 import type {
   AcceptApplicationResult,
   ApplicationDTO,
+  DeclineResult,
   ApplicationWithRatingDTO,
   ApplyInput,
   MyApplicationStateDTO,
   SpecTrackDTO,
 } from "./dto";
 import { applicationDTO, parseBestRuns, parseSlots } from "./mappers";
+import { resolveDeclineReason } from "./declineReasons";
+import { declineRecordData, getLastDeclinesByListing } from "./declineRecords";
+import { mergeCounts } from "./counts";
 import { findSchedulingConflict } from "./groups";
 import { getSpecTracks } from "./characters";
+
+// Scoped to exactly what applicationDTO reads (see src/data/mappers.ts)
+// instead of full Character rows via `include: { character: true }`.
+const APPLICATION_FOR_DTO_SELECT = {
+  id: true, groupId: true, applicantUserId: true, characterId: true,
+  role: true, specId: true, note: true, route: true, status: true, source: true, createdAt: true,
+  character: {
+    select: { name: true, realm: true, realmSlug: true, region: true, classId: true, ilvl: true, raidKills: true },
+  },
+} as const;
 
 /** Applying again while a pending application already exists from this user
  * refreshes it in place (new character/spec/note) rather than piling up
@@ -34,14 +48,14 @@ export async function createApplication(applicantUserId: string, input: ApplyInp
       ? tx.application.update({
           where: { id: existing.id },
           data: { characterId: input.characterId, specId: input.specId, role: input.role, note, route },
-          include: { character: true },
+          select: APPLICATION_FOR_DTO_SELECT,
         })
       : tx.application.create({
           data: {
             groupId: input.groupId, applicantUserId, characterId: input.characterId,
             specId: input.specId, role: input.role, note, route, status: "pending",
           },
-          include: { character: true },
+          select: APPLICATION_FOR_DTO_SELECT,
         });
   });
   return applicationDTO(a);
@@ -53,7 +67,7 @@ export async function getMyApplication(groupId: string, applicantUserId: string)
   const a = await prisma.application.findFirst({
     where: { groupId, applicantUserId },
     orderBy: { createdAt: "desc" },
-    include: { character: true },
+    select: APPLICATION_FOR_DTO_SELECT,
   });
   return a ? applicationDTO(a) : null;
 }
@@ -69,17 +83,46 @@ export async function getMyApplicationsByGroup(
 ): Promise<Record<string, MyApplicationStateDTO>> {
   const out: Record<string, MyApplicationStateDTO> = {};
   if (groupIds.length === 0) return out;
-  const rows = await prisma.application.findMany({
-    where: { applicantUserId, groupId: { in: groupIds } },
-    orderBy: { createdAt: "desc" },
-    include: { character: true },
-  });
+  const [rows, lastDeclines] = await Promise.all([
+    prisma.application.findMany({
+      where: { applicantUserId, groupId: { in: groupIds } },
+      orderBy: { createdAt: "desc" },
+      select: APPLICATION_FOR_DTO_SELECT,
+    }),
+    getLastDeclinesByListing(applicantUserId, groupIds),
+  ]);
   for (const a of rows) {
-    const entry = (out[a.groupId] ??= { application: null, declinedCount: 0 });
+    const entry = (out[a.groupId] ??= { application: null, declinedCount: 0, lastDecline: null });
     if (!entry.application) entry.application = applicationDTO(a); // newest-first: first row per group is the latest
     if (a.status === "declined") entry.declinedCount++;
   }
+  // Only surfaced while the latest application is actually a decline -
+  // re-applying replaces the state, so a stale reason must not linger.
+  for (const [groupId, entry] of Object.entries(out)) {
+    if (entry.application?.status === "declined") entry.lastDecline = lastDeclines[groupId] ?? null;
+  }
   return out;
+}
+
+/**
+ * Pending-application counts for the given groups, in one query.
+ *
+ * Seeds the owner's "Pending Requests (N)" badge into the server render.
+ * Without it the chip renders nothing at all until its own client fetch
+ * lands, and those fetches are the last to fire on a board page - which is
+ * exactly why the badge appeared to arrive late.
+ *
+ * Callers must pass only groups the viewer owns: the count is owner-only
+ * information and this function does not re-check ownership.
+ */
+export async function getPendingCountsByGroup(groupIds: string[]): Promise<Record<string, number>> {
+  if (groupIds.length === 0) return {};
+  const rows = await prisma.application.groupBy({
+    by: ["groupId"],
+    where: { groupId: { in: groupIds }, status: "pending" },
+    _count: { _all: true },
+  });
+  return mergeCounts(groupIds, rows.map((r) => ({ id: r.groupId, count: r._count._all })));
 }
 
 /** A declined application isn't deleted - re-applying (see createApplication)
@@ -111,6 +154,11 @@ function meetsGroupRequirement(
 
 const EMPTY_ROLE_COUNTS: Record<Role, number> = { TANK: 0, HEALER: 0, DPS: 0 };
 
+// See the PENDING_APPLICATIONS_CAP usage below - the ranking score can't be
+// computed in SQL (see rankScoreFor), so pagination is a JS slice over this
+// set; this just bounds how large that set can get in one query.
+const PENDING_APPLICATIONS_CAP = 500;
+
 /** Pending applications for a group, filtered to one role tab and paginated,
  * sorted highest-rating-first — owner-only (empty result if the caller
  * doesn't own it, rather than throwing, since this backs a UI list).
@@ -126,15 +174,23 @@ export async function listPendingApplications(
   page = 1,
   pageSize = 5
 ): Promise<{ applications: ApplicationWithRatingDTO[]; total: number; countsByRole: Record<Role, number> }> {
-  const group = await prisma.group.findUnique({ where: { id: groupId } });
+  // Fetched together: the pending rows don't depend on the ownership check,
+  // so serialising them just added a round trip to the common (owner) path.
+  // A non-owner wastes one read, which is the rarer case by far.
+  const [group, allPending] = await Promise.all([
+    prisma.group.findUnique({ where: { id: groupId } }),
+    // PENDING_APPLICATIONS_CAP is a defensive cap, not real pagination - a
+    // pathological pending-queue size shouldn't turn one badge click into an
+    // unbounded pull.
+    prisma.application.findMany({
+      where: { groupId, status: "pending" },
+      select: APPLICATION_FOR_DTO_SELECT,
+      take: PENDING_APPLICATIONS_CAP,
+    }),
+  ]);
   if (!group || group.ownerUserId !== ownerUserId) {
     return { applications: [], total: 0, countsByRole: { ...EMPTY_ROLE_COUNTS } };
   }
-
-  const allPending = await prisma.application.findMany({
-    where: { groupId, status: "pending" },
-    include: { character: true },
-  });
 
   const countsByRole = { ...EMPTY_ROLE_COUNTS };
   for (const a of allPending) countsByRole[a.role as Role]++;
@@ -233,16 +289,46 @@ export async function acceptApplication(applicationId: string, ownerUserId: stri
  * them to be told; instead the Solo Queue entry is freed up to be retried
  * against another group (see runSoloQueueMatch). Manual applications keep
  * notifying the applicant as before. */
-export async function declineApplication(applicationId: string, ownerUserId: string): Promise<boolean> {
-  const app = await prisma.application.findUnique({ where: { id: applicationId }, include: { group: true } });
-  if (!app || app.status !== "pending") return false;
-  if (app.group.ownerUserId !== ownerUserId) return false;
+export async function declineApplication(
+  applicationId: string,
+  ownerUserId: string,
+  reasonId: string,
+  note?: string | null
+): Promise<DeclineResult> {
+  const app = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: { group: true, character: { select: { name: true, realm: true, classId: true } } },
+  });
+  if (!app || app.status !== "pending") return { ok: false, reason: "not_found" };
+  if (app.group.ownerUserId !== ownerUserId) return { ok: false, reason: "not_found" };
+
+  const reason = await resolveDeclineReason(reasonId);
+  if (!reason) return { ok: false, reason: "invalid_reason" };
 
   await prisma.$transaction([
     prisma.application.update({ where: { id: applicationId }, data: { status: "declined" } }),
     prisma.soloQueueEntry.updateMany({
       where: { activeApplicationId: applicationId },
       data: { activeApplicationId: null },
+    }),
+    // Written in the same transaction: a decline that isn't recorded is
+    // exactly the state this feature exists to remove.
+    prisma.declineRecord.create({
+      data: declineRecordData({
+        applicantUserId: app.applicantUserId,
+        declinedByUserId: ownerUserId,
+        listingKind: app.group.kind,
+        listingTitle: app.group.title,
+        listingId: app.group.id,
+        reasonId: reason.id,
+        reasonLabel: reason.label,
+        note,
+        characterName: app.character.name,
+        characterRealm: app.character.realm,
+        classId: app.character.classId,
+        role: app.role,
+        specId: app.specId,
+      }),
     }),
   ]);
 
@@ -251,9 +337,9 @@ export async function declineApplication(applicationId: string, ownerUserId: str
   } else {
     notifyUser(app.applicantUserId, {
       title: "Application declined",
-      body: `Your application for "${app.group.title}" was declined.`,
-      url: "/runs",
+      body: `"${app.group.title}": ${reason.label}`,
+      url: "/profile",
     }).catch((err) => console.error("notifyUser decline failed", err));
   }
-  return true;
+  return { ok: true };
 }

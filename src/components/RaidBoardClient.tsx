@@ -21,7 +21,7 @@ const setToJSON = (s: Set<string>) => [...s];
 const setFromJSON = (raw: unknown): Set<string> | null => (Array.isArray(raw) ? new Set(raw as string[]) : null);
 
 export function RaidBoardClient({
-  initial, canList, current, viewerUserId, initialMyApps,
+  initial, canList, current, viewerUserId, initialMyApps, initialPendingCounts,
 }: {
   initial: GroupDTO[];
   canList: boolean;
@@ -31,6 +31,8 @@ export function RaidBoardClient({
    * getMyApplicationsByGroup. Seeds each card's Apply button so first paint
    * shows the real state instead of flashing "Apply". */
   initialMyApps?: Record<string, MyApplicationStateDTO>;
+  /** Pending-application counts for the viewer's own listings only. */
+  initialPendingCounts?: Record<string, number>;
 }) {
   const { groups, live } = useLiveBoard(initial);
   const [raids, setRaids, clearRaids] = useLocalStorageState<Set<string>>(
@@ -293,7 +295,7 @@ export function RaidBoardClient({
                 {mineOpen && (
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     {mine.map((g) => (
-                      <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} initialMyApp={initialMyApps?.[g.id]} />
+                      <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} initialMyApp={initialMyApps?.[g.id]} initialPendingCount={initialPendingCounts?.[g.id]} />
                     ))}
                   </div>
                 )}
@@ -309,7 +311,7 @@ export function RaidBoardClient({
                 )}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {othersPageItems.map((g) => (
-                    <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} initialMyApp={initialMyApps?.[g.id]} />
+                    <GroupCard key={g.id} group={g} current={current} canApply={canList} viewerUserId={viewerUserId} initialMyApp={initialMyApps?.[g.id]} initialPendingCount={initialPendingCounts?.[g.id]} />
                   ))}
                 </div>
                 {othersTotalPages > 1 && (

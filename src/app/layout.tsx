@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Overpass } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { AccountMenu } from "@/components/AccountMenu";
+import { AccountMenuSkeleton } from "@/components/AccountMenuSkeleton";
 import { SwRegister } from "@/components/SwRegister";
-import { auth } from "@/auth";
-import { ensureUser } from "@/data/users";
+import { getSessionUser } from "@/server/http";
 import { isAdminBattletag } from "@/lib/admin";
 import { MobileNavDrawer } from "@/components/MobileNavDrawer";
 import Link from "next/link";
@@ -55,14 +56,15 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  const s = session as (typeof session & { bnetId?: string; battletag?: string }) | null;
-  const loggedIn = Boolean(s?.user && s?.bnetId);
-  const isAdmin = isAdminBattletag(s?.battletag);
+  // Cached (see getSessionUser) - AccountMenu below needs the same session and
+  // user row, and the layout renders it twice, so this resolves once for all
+  // three rather than repeating the auth chain and a user write each time.
+  const ctx = await getSessionUser();
+  const loggedIn = ctx != null;
+  const isAdmin = isAdminBattletag(ctx?.session.battletag);
   // Group chat bubbles need "is this message mine" against potentially many
-  // senders (see ChatDockContext) — resolved once here, same ensureUser call
-  // AccountMenu makes independently for its own data.
-  const currentUserId = loggedIn ? (await ensureUser(s!.bnetId!, s!.battletag)).id : undefined;
+  // senders (see ChatDockContext).
+  const currentUserId = ctx?.user.id;
 
   return (
     <html lang="en" className={overpass.variable}>
@@ -80,6 +82,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="hidden sm:flex items-center gap-1">
                 <NavLink href="/runs">M+ Runs</NavLink>
                 <NavLink href="/raids">Raids</NavLink>
+                <NavLink href="/teams">Teams</NavLink>
                 {loggedIn && <NavLink href="/improvement">Parse Improvement</NavLink>}
               </div>
               <div className="ml-auto hidden sm:flex items-center gap-4">
@@ -88,7 +91,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     Admin
                   </Link>
                 )}
-                <AccountMenu />
+                <Suspense fallback={<AccountMenuSkeleton />}>
+                  <AccountMenu />
+                </Suspense>
               </div>
 
               {/* Mobile: everything above collapses behind a hamburger + slide-in drawer. */}
@@ -97,12 +102,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <div className="flex flex-col gap-1">
                     <NavLink href="/runs">M+ Runs</NavLink>
                     <NavLink href="/raids">Raids</NavLink>
+                    <NavLink href="/teams">Teams</NavLink>
                     {loggedIn && <NavLink href="/improvement">Parse Improvement</NavLink>}
                     {isAdmin && <NavLink href="/admin">Admin</NavLink>}
                   </div>
                   <div className="pt-3 mt-1 border-t border-panelborder space-y-3">
                     <div className="px-3">
-                      <AccountMenu />
+                      <Suspense fallback={<AccountMenuSkeleton />}>
+                        <AccountMenu />
+                      </Suspense>
                     </div>
                   </div>
                 </MobileNavDrawer>

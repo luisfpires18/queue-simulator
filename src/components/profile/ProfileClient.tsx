@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CharacterBoard } from "./CharacterBoard";
 import { NotificationsTab } from "./NotificationsTab";
-import { SettingsTab } from "./SettingsTab";
+import { FeedbackTab } from "./FeedbackTab";
+import { SettingsTab, type Settings } from "./SettingsTab";
 import { SeasonSnapshotGrid } from "./SeasonSnapshotGrid";
 import { WowIcon } from "@/components/WowIcon";
 import { MISC_ICON } from "@/game/icons";
 import type { RaidKillDTO } from "@/data/dto";
+import type { DeclineHistoryResponse } from "@/lib/queries";
 
 interface SpecTrack {
   specId: string;
@@ -36,8 +38,19 @@ interface Character {
   raidKills: RaidKillDTO[];
 }
 
-export function ProfileClient({ initial, currentSeasonId }: { initial: Character[]; currentSeasonId: string }) {
-  const [tab, setTab] = useState<"characters" | "notifications" | "settings">("characters");
+export function ProfileClient({
+  initial, currentSeasonId, hasTeam, initialSettings, initialFeedback,
+}: {
+  initial: Character[];
+  currentSeasonId: string;
+  hasTeam: boolean;
+  /** Server-rendered seed for the Settings tab - see SettingsTab. */
+  initialSettings: Settings;
+  /** Server-rendered seed for the default (received/page-1) Feedback tab
+   * view - see FeedbackTab/useDeclineHistory. */
+  initialFeedback?: DeclineHistoryResponse;
+}) {
+  const [tab, setTab] = useState<"characters" | "notifications" | "feedback" | "settings">("characters");
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
@@ -63,7 +76,7 @@ export function ProfileClient({ initial, currentSeasonId }: { initial: Character
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <TabCard
           active={tab === "characters"}
           onClick={() => setTab("characters")}
@@ -77,6 +90,13 @@ export function ProfileClient({ initial, currentSeasonId }: { initial: Character
           icon={MISC_ICON.bell}
           title="Notifications"
           description="Get pushed when a group opens up at your key level."
+        />
+        <TabCard
+          active={tab === "feedback"}
+          onClick={() => setTab("feedback")}
+          icon={MISC_ICON.identity}
+          title="Feedback"
+          description="Declines you've received, and the ones you gave."
         />
         <TabCard
           active={tab === "settings"}
@@ -117,8 +137,14 @@ export function ProfileClient({ initial, currentSeasonId }: { initial: Character
         )
       ) : tab === "notifications" ? (
         <NotificationsTab />
+      ) : tab === "feedback" ? (
+        <FeedbackTab initialData={initialFeedback} />
       ) : (
-        <SettingsTab />
+        <SettingsTab
+          initialSettings={initialSettings}
+          mainClassId={(initial.find((c) => c.isMain) ?? initial[0])?.classId ?? null}
+          hasTeam={hasTeam}
+        />
       )}
     </div>
   );

@@ -30,6 +30,7 @@ export function RoleIcon({
       width={size}
       height={size}
       loading="lazy"
+      decoding="async"
       className={cn(radius, "object-contain select-none", className)}
       style={{ width: size, height: size }}
       draggable={false}

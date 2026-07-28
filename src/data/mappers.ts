@@ -17,6 +17,8 @@ import type {
   MessageDTO,
   OpenSlot,
   RaidKillDTO,
+  TeamApplicationDTO,
+  TeamDTO,
 } from "./dto";
 
 export function charDTO(c: {
@@ -141,6 +143,57 @@ export function applicationDTO(a: {
     characterRegion: a.character.region, classId: a.character.classId, characterIlvl: a.character.ilvl,
     characterRaidKills: parseRaidKills(a.character.raidKills),
     role: a.role, specId: a.specId, note: a.note, route: a.route, status: a.status, source: a.source,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
+export function teamDTO(t: {
+  id: string; ownerUserId: string; name: string; description: string | null; iconSlug: string;
+  language: string | null; voiceChat: string | null;
+  requirementType: string | null; reqRating: number | null; reqLevel: number | null;
+  reqExtraCount: number | null; reqExtraLevel: number | null;
+  slots: string; status: string; createdAt: Date;
+  members: {
+    userId: string; characterId: string; role: string; specId: string | null; joinedAt: Date;
+    character: { name: string; realm: string; realmSlug: string; region: string; classId: string; ilvl: number | null; rating: number | null };
+  }[];
+}): TeamDTO {
+  return {
+    id: t.id, ownerUserId: t.ownerUserId, name: t.name, description: t.description, iconSlug: t.iconSlug,
+    language: t.language, voiceChat: t.voiceChat,
+    requirementType: t.requirementType, reqRating: t.reqRating, reqLevel: t.reqLevel,
+    reqExtraCount: t.reqExtraCount, reqExtraLevel: t.reqExtraLevel,
+    slots: parseSlots(t.slots),
+    status: t.status, createdAt: t.createdAt.toISOString(),
+    members: t.members
+      .map((m) => ({
+        userId: m.userId, characterId: m.characterId,
+        characterName: m.character.name, characterRealm: m.character.realm,
+        characterRealmSlug: m.character.realmSlug, characterRegion: m.character.region,
+        classId: m.character.classId, characterIlvl: m.character.ilvl, characterRating: m.character.rating,
+        role: m.role, specId: m.specId,
+        isOwner: m.userId === t.ownerUserId,
+        joinedAt: m.joinedAt.toISOString(),
+      }))
+      // Owner first, then join order - the roster reads as a hierarchy.
+      .sort((a, b) => Number(b.isOwner) - Number(a.isOwner) || a.joinedAt.localeCompare(b.joinedAt)),
+  };
+}
+
+export function teamApplicationDTO(a: {
+  id: string; teamId: string; applicantUserId: string; characterId: string;
+  role: string; specId: string; note: string | null; status: string; createdAt: Date;
+  character: {
+    name: string; realm: string; realmSlug: string; region: string;
+    classId: string; ilvl: number | null; raidKills: string;
+  };
+}): TeamApplicationDTO {
+  return {
+    id: a.id, teamId: a.teamId, applicantUserId: a.applicantUserId, characterId: a.characterId,
+    characterName: a.character.name, characterRealm: a.character.realm, characterRealmSlug: a.character.realmSlug,
+    characterRegion: a.character.region, classId: a.character.classId, characterIlvl: a.character.ilvl,
+    characterRaidKills: parseRaidKills(a.character.raidKills),
+    role: a.role, specId: a.specId, note: a.note, status: a.status,
     createdAt: a.createdAt.toISOString(),
   };
 }

@@ -1,6 +1,7 @@
 // Character roster + per-spec track persistence. Verbatim moves from the old
 // src/data/source.ts, except getPublicCharacters which batches its spec-track
 // lookup (was one query per character).
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { BlizzardChar } from "./blizzard";
 import type { RaidKillDifficulty } from "@/game/raidSeason";
@@ -11,18 +12,22 @@ import type {
   RaidKillDTO,
   RosterCharacterDTO,
   SpecTrackDTO,
+  TeamDTO,
 } from "./dto";
 import { charDTO, parseBestRuns, parseRaidKills } from "./mappers";
+import { getMyTeam } from "./teams";
 
 const BUCKET_ORDER: Record<string, number> = { main: 0, alt: 1, hidden: 2 };
 
-export async function getUserCharacters(userId: string): Promise<CharacterDTO[]> {
+/** React-cached per request: several server components (AccountMenu, the
+ * board pages, profile) each need the caller's roster during one render. */
+export const getUserCharacters = cache(async (userId: string): Promise<CharacterDTO[]> => {
   const chars = await prisma.character.findMany({
     where: { userId },
     orderBy: [{ sortOrder: "asc" }, { level: "desc" }, { name: "asc" }],
   });
   return chars.map(charDTO).sort((a, b) => BUCKET_ORDER[a.bucket] - BUCKET_ORDER[b.bucket] || a.sortOrder - b.sortOrder);
-}
+});
 
 /** Public roster for another player's profile page — hidden characters excluded. */
 export async function getPublicCharacters(
@@ -31,6 +36,11 @@ export async function getPublicCharacters(
 ): Promise<{
   userId: string; battletag: string | null; country: string | null; discord: string | null; twitch: string | null;
   memberSince: string; characters: RosterCharacterDTO[];
+  // Profile presentation, all set from the owner's Settings tab.
+  bannerType: string; bannerClassId: string | null; bannerImage: string | null;
+  aboutMe: string | null; lftStatus: string;
+  /** The team this account belongs to, or null - drives the status chip. */
+  team: TeamDTO | null;
 } | null> {
   const owner = await prisma.character.findFirst({ where: { realmSlug, name }, include: { user: true } });
   if (!owner) return null;
@@ -39,7 +49,12 @@ export async function getPublicCharacters(
     orderBy: [{ sortOrder: "asc" }, { level: "desc" }, { name: "asc" }],
   });
   const sorted = chars.map(charDTO).sort((a, b) => BUCKET_ORDER[a.bucket] - BUCKET_ORDER[b.bucket] || a.sortOrder - b.sortOrder);
-  const tracksByChar = await getSpecTracksByCharacter(sorted.map((c) => c.id));
+  // Independent of each other - awaiting them in sequence added a round trip
+  // for no reason.
+  const [tracksByChar, team] = await Promise.all([
+    getSpecTracksByCharacter(sorted.map((c) => c.id)),
+    getMyTeam(owner.userId),
+  ]);
   const characters = sorted.map((c) => ({ ...c, specTracks: tracksByChar.get(c.id) ?? [] }));
   return {
     userId: owner.userId,
@@ -49,6 +64,12 @@ export async function getPublicCharacters(
     twitch: owner.user.twitch,
     memberSince: owner.user.createdAt.toISOString(),
     characters,
+    bannerType: owner.user.bannerType,
+    bannerClassId: owner.user.bannerClassId,
+    bannerImage: owner.user.bannerImage,
+    aboutMe: owner.user.aboutMe,
+    lftStatus: owner.user.lftStatus,
+    team,
   };
 }
 
@@ -96,16 +117,20 @@ export async function setCharacterRaidKills(characterId: string, kills: RaidKill
 export async function upsertCharacters(userId: string, chars: BlizzardChar[]) {
   // Only import max-level playable characters with a mapped class.
   const usable = chars.filter((c) => c.classId && c.level >= 70);
-  for (const c of usable) {
-    await prisma.character.upsert({
-      where: { userId_realm_name: { userId, realm: c.realm, name: c.name } },
-      create: {
-        userId, name: c.name, realm: c.realm, realmSlug: c.realmSlug, region: c.region,
-        classId: c.classId!, level: c.level, faction: c.faction,
-      },
-      update: { level: c.level, faction: c.faction, classId: c.classId!, realmSlug: c.realmSlug },
-    });
-  }
+  // Batched in one transaction rather than N sequential round trips - same
+  // pattern as setCharacterRating/setSpecTracks below.
+  await prisma.$transaction(
+    usable.map((c) =>
+      prisma.character.upsert({
+        where: { userId_realm_name: { userId, realm: c.realm, name: c.name } },
+        create: {
+          userId, name: c.name, realm: c.realm, realmSlug: c.realmSlug, region: c.region,
+          classId: c.classId!, level: c.level, faction: c.faction,
+        },
+        update: { level: c.level, faction: c.faction, classId: c.classId!, realmSlug: c.realmSlug },
+      })
+    )
+  );
   return usable.length;
 }
 

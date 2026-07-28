@@ -1,26 +1,14 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { getSessionUser } from "@/server/http";
 import { getPublicCharacters } from "@/data/characters";
 import { fetchLivePlayerProfile } from "@/data/livePlayer";
-import { fetchCharacterTitles } from "@/data/blizzardApp";
 import { fetchRaidProgression } from "@/data/raiderio";
-import { MPLUS_R1_TITLE_IDS } from "@/game/mplusTitles";
 import { CharacterCard } from "@/components/CharacterCard";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
+import { R1TitlesStat } from "@/components/profile/R1TitlesStat";
 import { bestSpecFor } from "@/game/roster";
 import { highestCharacterRating } from "@/game/rating";
-
-// Titles are account-wide, so one character's title list already reflects
-// the whole account - no need to fetch per character on a multi-alt roster.
-// Best-effort: a Blizzard hiccup shouldn't fail the whole profile page, it
-// should just hide the stat (null, distinct from a genuine 0).
-async function fetchR1TitleCount(region: string, realmSlug: string, name: string): Promise<number | null> {
-  try {
-    const titles = await fetchCharacterTitles(region, realmSlug, name);
-    return titles.filter((t) => MPLUS_R1_TITLE_IDS.includes(t.id)).length;
-  } catch {
-    return null;
-  }
-}
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +30,14 @@ export default async function PlayerSearchResultPage({
   const decodedRealmSlug = decodeURIComponent(realmSlug);
   const decodedName = decodeURIComponent(name);
 
-  const registered = await getPublicCharacters(decodedRealmSlug, decodedName);
+  // Independent of each other - getSessionUser is cached (see the same block
+  // in runs/page.tsx) and the layout already triggers it, so this is free
+  // more often than not.
+  const [registered, ctx] = await Promise.all([getPublicCharacters(decodedRealmSlug, decodedName), getSessionUser()]);
   if (registered) {
+    // Only needed to decide whether the roster modal offers Leave/Remove.
+    const viewer = ctx?.user ?? null;
+
     // Fallback only for characters WCL gave us nothing for (most commonly:
     // their logs are private) - not a blanket extra API call per character.
     const characters = await Promise.all(
@@ -58,7 +52,6 @@ export default async function PlayerSearchResultPage({
     for (const c of characters) byBucket[c.bucket]?.push(c);
     const mainChar = characters.find((c) => c.isMain) ?? characters[0] ?? null;
     const displayName = registered.battletag?.split("#")[0] ?? mainChar?.name ?? "Player";
-    const r1Titles = mainChar ? await fetchR1TitleCount(mainChar.region, mainChar.realmSlug, mainChar.name) : null;
 
     return (
       <div className="space-y-5">
@@ -71,7 +64,17 @@ export default async function PlayerSearchResultPage({
             country={registered.country}
             main={{ name: mainChar.name, classId: mainChar.classId, specId: bestSpecFor(mainChar) || null }}
             highestRating={highestCharacterRating(characters)}
-            r1Titles={r1Titles}
+            r1TitlesSlot={
+              <Suspense fallback={null}>
+                <R1TitlesStat region={mainChar.region} realmSlug={mainChar.realmSlug} name={mainChar.name} />
+              </Suspense>
+            }
+            banner={{ bannerType: registered.bannerType, bannerClassId: registered.bannerClassId, bannerImage: registered.bannerImage }}
+            aboutMe={registered.aboutMe}
+            team={registered.team}
+            lftStatus={registered.lftStatus}
+            viewerUserId={viewer?.id ?? null}
+            isOwnProfile={viewer?.id === registered.userId}
           />
         )}
         {(["main", "alt"] as const).map((bucket) =>
@@ -103,8 +106,6 @@ export default async function PlayerSearchResultPage({
     );
   }
 
-  const liveR1Titles = await fetchR1TitleCount(live.region, live.realmSlug, live.name);
-
   return (
     <div className="space-y-5">
       <ProfileOverview
@@ -113,7 +114,11 @@ export default async function PlayerSearchResultPage({
         characterCount={null}
         main={{ name: live.name, classId: live.classId, specId: live.specId }}
         highestRating={live.rating}
-        r1Titles={liveR1Titles}
+        r1TitlesSlot={
+          <Suspense fallback={null}>
+            <R1TitlesStat region={live.region} realmSlug={live.realmSlug} name={live.name} />
+          </Suspense>
+        }
         live
       />
       <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">

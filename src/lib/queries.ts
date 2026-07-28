@@ -14,14 +14,19 @@ import type {
   ChatGroupDTO,
   ChatGroupMessageDTO,
   ChatGroupSummaryDTO,
+  DeclineReasonDTO,
+  DeclineRecordDTO,
   FriendDTO,
   FriendRequestDTO,
   FriendshipStatus,
   MessageDTO,
   MyApplicationStateDTO,
+  MyTeamApplicationStateDTO,
   SoloQueueStatusDTO,
+  TeamApplicationWithRatingDTO,
 } from "@/data/dto";
 import type { Role } from "@/game/classes";
+import type { DeclineSide } from "@/data/declineRecords";
 import { apiFetch } from "./api-client";
 
 export const queryKeys = {
@@ -36,6 +41,11 @@ export const queryKeys = {
   chatGroups: ["chat-groups"] as const,
   chatGroup: (groupId: string) => ["chat-group", groupId] as const,
   chatGroupMessages: (groupId: string) => ["chat-group-messages", groupId] as const,
+  myTeamApplication: (teamId: string) => ["my-team-application", teamId] as const,
+  pendingTeamApplications: (teamId: string, role: string, page: number) =>
+    ["pending-team-applications", teamId, role, page] as const,
+  declineReasons: ["decline-reasons"] as const,
+  declineHistory: (side: DeclineSide, page: number) => ["decline-history", side, page] as const,
 };
 
 /** The caller's Solo Queue state. Polls every 4s while queued/matched - the
@@ -81,8 +91,13 @@ export interface PendingApplicationsResponse {
   countsByRole: Record<Role, number>;
 }
 
-/** Owner-only pending-applications page for one group/role tab. */
-export function usePendingApplications(groupId: string, role: "ALL" | Role, page: number, pageSize: number) {
+/** Owner-only pending-applications page for one group/role tab. `enabled`
+ * (pass the modal's own `open` state) keeps this from firing for every
+ * owned card on every page load - the badge count already comes from
+ * `initialCount` (see getPendingCountsByGroup), so the full list only needs
+ * to load once the modal actually opens. staleTime 0 + re-enabling on open
+ * still means each reopen shows fresh data. */
+export function usePendingApplications(groupId: string, role: "ALL" | Role, page: number, pageSize: number, enabled: boolean) {
   const roleParam = role === "ALL" ? "" : `&role=${role}`;
   return useQuery({
     queryKey: queryKeys.pendingApplications(groupId, role, page),
@@ -91,6 +106,42 @@ export function usePendingApplications(groupId: string, role: "ALL" | Role, page
         `/api/groups/${groupId}/applications?page=${page}&pageSize=${pageSize}${roleParam}`
       ),
     staleTime: 0,
+    enabled,
+  });
+}
+
+/** The caller's own application to one team (Apply button state), seeded from
+ * the /teams server render the same way useMyApplication is. */
+export function useMyTeamApplication(teamId: string, enabled: boolean, initialData?: MyTeamApplicationStateDTO) {
+  return useQuery({
+    queryKey: queryKeys.myTeamApplication(teamId),
+    queryFn: () => apiFetch<MyTeamApplicationStateDTO>(`/api/teams/${teamId}/my-application`),
+    staleTime: 0,
+    enabled,
+    initialData,
+  });
+}
+
+export interface PendingTeamApplicationsResponse {
+  applications: TeamApplicationWithRatingDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+  countsByRole: Record<Role, number>;
+}
+
+/** Owner-only pending-applications page for one team/role tab. `enabled` -
+ * see the same note on usePendingApplications. */
+export function usePendingTeamApplications(teamId: string, role: "ALL" | Role, page: number, pageSize: number, enabled: boolean) {
+  const roleParam = role === "ALL" ? "" : `&role=${role}`;
+  return useQuery({
+    queryKey: queryKeys.pendingTeamApplications(teamId, role, page),
+    queryFn: () =>
+      apiFetch<PendingTeamApplicationsResponse>(
+        `/api/teams/${teamId}/applications?page=${page}&pageSize=${pageSize}${roleParam}`
+      ),
+    staleTime: 0,
+    enabled,
   });
 }
 
@@ -170,5 +221,39 @@ export function useChatGroupMessages(groupId: string, initialData?: ChatGroupMes
     staleTime: 0,
     initialData,
     enabled,
+  });
+}
+
+/** The decline-reason picker's options - shared across every GroupCard/
+ * TeamCard that can open a DeclineDialog, instead of each one fetching its
+ * own copy on every open. Not staleTime 0: this is a low-churn, admin-managed
+ * global list (also cached server-side via unstable_cache, see
+ * src/data/declineReasons.ts), not per-user live state. */
+export function useDeclineReasons() {
+  return useQuery({
+    queryKey: queryKeys.declineReasons,
+    queryFn: () => apiFetch<{ reasons: DeclineReasonDTO[] }>("/api/decline-reasons").then((r) => r.reasons),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export interface DeclineHistoryResponse {
+  records: DeclineRecordDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** The profile Feedback tab's decline history (either side, paginated).
+ * `initialData` (from the profile page's server render, for the default
+ * received/page-1 view) makes opening the tab show real data immediately
+ * instead of flashing "Loading…" - only wired up for that one combination,
+ * since anything else (switching side or page) is genuinely new data. */
+export function useDeclineHistory(side: DeclineSide, page: number, initialData?: DeclineHistoryResponse) {
+  return useQuery({
+    queryKey: queryKeys.declineHistory(side, page),
+    queryFn: () => apiFetch<DeclineHistoryResponse>(`/api/profile/declines?side=${side}&page=${page}`),
+    staleTime: 10_000,
+    initialData: side === "received" && page === 1 ? initialData : undefined,
   });
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import type { ApplicationDTO, CharacterRatingSummaryDTO, ComboMember, CurrentSelectionDTO, GroupDTO, MyApplicationStateDTO } from "@/data/dto";
+import dynamic from "next/dynamic";
+import type { CharacterRatingSummaryDTO, ComboMember, CurrentSelectionDTO, GroupDTO, MyApplicationStateDTO } from "@/data/dto";
 import { DUNGEON_BY_ID } from "@/game/season";
 import { RAID_BY_ID, RAID_DIFFICULTY_LABEL, type RaidDifficulty } from "@/game/raidSeason";
 import { MISC_ICON } from "@/game/icons";
@@ -11,18 +11,22 @@ import { RoleIcon } from "./RoleIcon";
 import { specById, CLASS_BY_ID, type Role } from "@/game/classes";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
-import { ApplyModal } from "./ApplyModal";
-import { PendingRequestsModal } from "./PendingRequestsModal";
-import { CharacterRatingModal } from "./CharacterRatingModal";
-import { GroupDetailsModal } from "./GroupDetailsModal";
 import { CountdownLight } from "./CountdownLight";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { MAX_APPLICATION_DECLINES } from "@/game/applications";
 import { ROLE_LABEL } from "./GroupFormShared";
 import { requirementChipLabel, startInfo } from "@/lib/format";
 import { apiFetch } from "@/lib/api-client";
-import { queryKeys, useMyApplication, type MyApplicationResponse } from "@/lib/queries";
+import { useMyApplication } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+
+// Code-split: click-gated modals shouldn't ship in the main bundle for a
+// board that renders one GroupCard per listing. ssr: false since each is
+// invisible (returns null) until its own `open` prop flips true anyway.
+const ApplyModal = dynamic(() => import("./ApplyModal").then((m) => m.ApplyModal), { ssr: false });
+const PendingRequestsModal = dynamic(() => import("./PendingRequestsModal").then((m) => m.PendingRequestsModal), { ssr: false });
+const CharacterRatingModal = dynamic(() => import("./CharacterRatingModal").then((m) => m.CharacterRatingModal), { ssr: false });
+const GroupDetailsModal = dynamic(() => import("./GroupDetailsModal").then((m) => m.GroupDetailsModal), { ssr: false });
+const ConfirmDialog = dynamic(() => import("./ConfirmDialog").then((m) => m.ConfirmDialog), { ssr: false });
 
 type CardSlot =
   | { kind: "filled"; characterId: string; specId: string | null; classId: string; name: string; role: string; isLeader: boolean }
@@ -131,7 +135,7 @@ function SlotSquare({ slot, onClick }: { slot: CardSlot; onClick?: () => void })
 }
 
 function GroupCardInner({
-  group, current, canApply, viewerUserId, highlighted, onDelisted, initialMyApp,
+  group, current, canApply, viewerUserId, highlighted, onDelisted, initialMyApp, initialPendingCount,
 }: {
   group: GroupDTO;
   current: CurrentSelectionDTO | null;
@@ -141,6 +145,10 @@ function GroupCardInner({
    * getMyApplicationsByGroup) - first paint shows the real Apply-button
    * state; the query still revalidates in the background. */
   initialMyApp?: MyApplicationStateDTO;
+  /** Server-rendered pending-application count for owners (see
+   * getPendingCountsByGroup) - without it the badge waits on a client fetch
+   * that fires after every other query on the board. */
+  initialPendingCount?: number;
   /** True when this card is the target of a /runs?highlight=<id> deep link
    * (e.g. Solo Queue's "See Key Listed") - rings it so it stands out from
    * the rest of the board. */
@@ -159,7 +167,6 @@ function GroupCardInner({
   const [ratingTarget, setRatingTarget] = useState<{ characterId: string; specId: string } | null>(null);
   const [ratingSummary, setRatingSummary] = useState<CharacterRatingSummaryDTO | null>(null);
   const [ratingLoading, setRatingLoading] = useState(false);
-  const queryClient = useQueryClient();
   const isOwner = viewerUserId != null && viewerUserId === group.ownerUserId;
   const isFull = group.slots.length === 0;
   const isRaid = group.kind === "raid";
@@ -171,6 +178,7 @@ function GroupCardInner({
   const { data: myAppData } = useMyApplication(group.id, !isOwner && canApply, initialMyApp);
   const myApp = myAppData?.application ?? null;
   const declinedCount = myAppData?.declinedCount ?? 0;
+  const lastDecline = myAppData?.lastDecline ?? null;
 
   async function deleteGroup() {
     setDeleting(true);
@@ -184,7 +192,9 @@ function GroupCardInner({
     }
   }
 
-  function openRating(characterId: string, specId: string) {
+  // Stable identity - only closes over setState setters (already stable),
+  // so this doesn't defeat SlotSquare's inline click handlers on its own.
+  const openRating = useCallback((characterId: string, specId: string) => {
     setRatingTarget({ characterId, specId });
     setRatingSummary(null);
     setRatingLoading(true);
@@ -192,26 +202,30 @@ function GroupCardInner({
       .then((data) => setRatingSummary(data))
       .catch(() => setRatingSummary(null))
       .finally(() => setRatingLoading(false));
-  }
+  }, []);
 
-  const filled: CardSlot[] = group.members.map((m) => ({
-    kind: "filled",
-    characterId: m.id,
-    specId: m.broughtSpecId ?? m.specId,
-    classId: m.classId,
-    name: m.name,
-    role: m.role,
-    isLeader: m.userId === group.ownerUserId,
-  }));
-  // an open slot's "accepts, in order" falls back to the desired-comps specs
-  // for its role whenever the poster didn't fill per-slot prefs directly —
-  // keeps the popover consistent with whatever they set in Desired comps.
-  const comboPrefs = comboPrefsByRole(group.combos);
-  const effectivePrefs = (s: { role: string; prefs: string[] }): string[] =>
-    s.prefs.length > 0 ? s.prefs : comboPrefs[s.role] ?? [];
-
-  const open: CardSlot[] = group.slots.map((s) => ({ kind: "open", role: s.role, prefs: effectivePrefs(s) }));
-  const cardSlots = [...filled, ...open];
+  // group is stable between SSE ticks for unchanged cards (see useLiveBoard),
+  // so this only needs to recompute when it actually changes - not on every
+  // re-render from this card's own local state (opening a modal, etc).
+  const cardSlots = useMemo<CardSlot[]>(() => {
+    const filled: CardSlot[] = group.members.map((m) => ({
+      kind: "filled",
+      characterId: m.id,
+      specId: m.broughtSpecId ?? m.specId,
+      classId: m.classId,
+      name: m.name,
+      role: m.role,
+      isLeader: m.userId === group.ownerUserId,
+    }));
+    // an open slot's "accepts, in order" falls back to the desired-comps
+    // specs for its role whenever the poster didn't fill per-slot prefs
+    // directly — keeps the popover consistent with Desired comps.
+    const comboPrefs = comboPrefsByRole(group.combos);
+    const effectivePrefs = (s: { role: string; prefs: string[] }): string[] =>
+      s.prefs.length > 0 ? s.prefs : comboPrefs[s.role] ?? [];
+    const open: CardSlot[] = group.slots.map((s) => ({ kind: "open", role: s.role, prefs: effectivePrefs(s) }));
+    return [...filled, ...open];
+  }, [group]);
 
   return (
     <div
@@ -305,7 +319,24 @@ function GroupCardInner({
       )}
 
       {isOwner && (
-        <PendingRequestsModal groupId={group.id} dungeonId={group.dungeonId} onResolved={() => router.refresh()} />
+        <PendingRequestsModal
+          groupId={group.id}
+          dungeonId={group.dungeonId}
+          initialCount={initialPendingCount}
+          onResolved={() => router.refresh()}
+        />
+      )}
+
+      {/* Why they were turned down, where they'll actually look for it -
+          otherwise the reason only exists in a push notification and a tab on
+          their own profile. */}
+      {lastDecline && (
+        <div className="rounded-md border border-rose-500/40 bg-rose-500/10 p-2 space-y-1">
+          <div className="text-[11px] text-rose-200">
+            <span className="font-semibold">Declined:</span> {lastDecline.reasonLabel}
+          </div>
+          {lastDecline.note && <p className="text-[11px] text-gray-300 italic">&ldquo;{lastDecline.note}&rdquo;</p>}
+        </div>
       )}
 
       <div className="flex items-center justify-end gap-2 mt-auto">
@@ -353,12 +384,7 @@ function GroupCardInner({
         current={current}
         open={applyOpen}
         onClose={() => setApplyOpen(false)}
-        onApplied={(app) =>
-          queryClient.setQueryData<MyApplicationResponse>(queryKeys.myApplication(group.id), (prev) => ({
-            application: app,
-            declinedCount: prev?.declinedCount ?? 0,
-          }))
-        }
+        initialMyApp={initialMyApp}
       />
 
       <ConfirmDialog

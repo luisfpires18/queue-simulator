@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { type Role } from "@/game/classes";
+import { roleBudgetFromSlots } from "@/game/slotGroups";
 import { RAIDS, RAID_BY_ID, RAID_DIFFICULTIES, RAID_DIFFICULTY_LABEL, raidSizeRange, type RaidDifficulty } from "@/game/raidSeason";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
 import { RoleIcon } from "./RoleIcon";
 import { ErrorModal } from "./ErrorModal";
 import {
-  ROLE_LABEL, ComboEditor, CoveragePanel, SlotPrefPicker, Field, UtilityCoveragePanel,
-  resolveListingOwner, slotLabels, submitListingRequest, toLocalInputValue,
+  ROLE_LABEL, ComboEditor, CoveragePanel, RoleSlotPrefPickers, Field, UtilityCoveragePanel,
+  resolveListingOwner, submitListingRequest, toLocalInputValue,
   useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
@@ -100,8 +101,9 @@ export function RaidListForm({
     setSlots(raidSlotsFor(ownerRole, counts));
   }, [ownerRole, counts]);
 
-  const setSlotPrefs = (i: number, prefs: string[]) =>
-    setSlots((prev) => prev.map((s, idx) => (idx === i ? { ...s, prefs } : s)));
+  // A combo describes the rest of the roster, so it can only ever hold what
+  // this raid still has room for - no tank spot once the tank count is met.
+  const roleBudget = useMemo(() => roleBudgetFromSlots(slots), [slots]);
 
   const { combos, addCombo, removeCombo, addComboMember, removeComboMember, prefMode, switchPrefMode } =
     useComboBuilder(editGroup, size, setSlots);
@@ -139,8 +141,6 @@ export function RaidListForm({
     }
     window.location.assign("/raids");
   };
-
-  const labels = slotLabels(slots);
 
   return (
     <div className="space-y-6">
@@ -286,17 +286,7 @@ export function RaidListForm({
       {prefMode === "slots" ? (
         <div>
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Open slots ({slots.length})</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {slots.map((s, i) => (
-              <SlotPrefPicker
-                key={i}
-                role={s.role}
-                label={labels[i]}
-                value={s.prefs}
-                onChange={(v) => setSlotPrefs(i, v)}
-              />
-            ))}
-          </div>
+          <RoleSlotPrefPickers slots={slots} setSlots={setSlots} />
         </div>
       ) : (
         <div className="panel p-4 space-y-3">
@@ -309,6 +299,7 @@ export function RaidListForm({
               key={combo.key}
               members={combo.members}
               ownerSpecId={ownerSpecId}
+              roleBudget={roleBudget}
               maxMembers={size}
               onAdd={(specId) => addComboMember(combo.key, specId)}
               onRemove={(i) => removeComboMember(combo.key, i)}

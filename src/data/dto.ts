@@ -176,6 +176,10 @@ export interface ApplicationDTO {
 export interface MyApplicationStateDTO {
   application: ApplicationDTO | null;
   declinedCount: number;
+  /** Set only when the latest application was declined - the reason the owner
+   * picked, shown on the card and in the apply modal so the applicant doesn't
+   * have to dig through their profile to find out why. */
+  lastDecline: LastDeclineDTO | null;
 }
 
 export interface ApplyInput {
@@ -198,6 +202,163 @@ export type AcceptApplicationResult =
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "conflict"; conflictTitle: string }
   | { ok: false; reason: "below_requirement"; requiredRating: number };
+
+// ---- Decline reasons + history ----
+
+export interface DeclineReasonDTO {
+  id: string;
+  label: string;
+  sortOrder: number;
+  active: boolean;
+}
+
+/** What the applicant is shown about why they were turned down - the reason
+ * plus the decliner's note, attached to the listing it belongs to. */
+export interface LastDeclineDTO {
+  reasonLabel: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** Declining fails only two ways: the application isn't yours/isn't pending,
+ * or the picked reason doesn't exist or has been archived. */
+export type DeclineResult = { ok: true } | { ok: false; reason: "not_found" | "invalid_reason" };
+
+/** One decline, as shown on either side of it. Every display field is frozen
+ * at decline time (see the DeclineRecord model) - renaming a reason or
+ * deleting the character never rewrites what happened. */
+export interface DeclineRecordDTO {
+  id: string;
+  listingKind: string; // "mplus" | "raid" | "team"
+  listingTitle: string;
+  listingId: string;
+  reasonLabel: string;
+  note: string | null;
+  characterName: string;
+  characterRealm: string;
+  classId: string;
+  role: string;
+  specId: string;
+  createdAt: string;
+  /** The other party: who declined you, or who you declined. */
+  counterparty: DisplayIdentityDTO;
+}
+
+// ---- Teams (persistent rosters, listed on /teams) ----
+
+export interface TeamMemberDTO {
+  userId: string;
+  characterId: string;
+  characterName: string;
+  characterRealm: string;
+  characterRealmSlug: string;
+  characterRegion: string;
+  classId: string;
+  characterIlvl: number | null;
+  characterRating: number | null;
+  role: string;
+  specId: string | null;
+  isOwner: boolean;
+  joinedAt: string;
+}
+
+export interface TeamDTO {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  description: string | null;
+  iconSlug: string;
+  /** ISO 639-1 from src/game/languages.ts - what voice chat is spoken in. */
+  language: string | null;
+  /** Free text, e.g. "Discord, mic required". Null renders nothing. */
+  voiceChat: string | null;
+  // Same advisory requirement vocabulary as GroupDTO.
+  requirementType: string | null;
+  reqRating: number | null;
+  reqLevel: number | null;
+  reqExtraCount: number | null;
+  reqExtraLevel: number | null;
+  slots: OpenSlot[]; // open recruitment slots
+  status: string;
+  createdAt: string;
+  members: TeamMemberDTO[];
+}
+
+/** The compact form the profile status chip renders from. */
+export interface TeamSummaryDTO {
+  id: string;
+  name: string;
+  iconSlug: string;
+  memberCount: number;
+}
+
+export interface CreateTeamInput {
+  name: string;
+  description?: string | null;
+  iconSlug: string;
+  language?: string | null;
+  voiceChat?: string | null;
+  ownerRole: string;
+  ownerCharacterId: string;
+  ownerSpecId: string;
+  slots: OpenSlot[];
+  requirementType?: string | null;
+  reqRating?: number | null;
+  reqLevel?: number | null;
+  reqExtraCount?: number | null;
+  reqExtraLevel?: number | null;
+}
+
+export interface TeamApplicationDTO {
+  id: string;
+  teamId: string;
+  applicantUserId: string;
+  characterId: string;
+  characterName: string;
+  characterRealm: string;
+  characterRealmSlug: string;
+  characterRegion: string;
+  classId: string;
+  characterIlvl: number | null;
+  characterRaidKills: RaidKillDTO[];
+  role: string;
+  specId: string;
+  note: string | null;
+  status: string; // pending | accepted | declined
+  createdAt: string;
+}
+
+export interface TeamApplicationWithRatingDTO extends TeamApplicationDTO {
+  specTracks: SpecTrackDTO[];
+  rankedByMain: boolean;
+  meetsRequirement: boolean | null;
+}
+
+/** Shape of GET /api/teams/[id]/my-application - drives the Apply button. */
+export interface MyTeamApplicationStateDTO {
+  application: TeamApplicationDTO | null;
+  /** See MyApplicationStateDTO.lastDecline. */
+  lastDecline: LastDeclineDTO | null;
+  /** Counted from DeclineRecord rather than the application row, which a
+   * re-apply overwrites - same two-attempt cap as a key listing. */
+  declinedCount: number;
+}
+
+export interface ApplyToTeamInput {
+  teamId: string;
+  characterId: string;
+  specId: string;
+  role: string;
+  note?: string | null;
+}
+
+export type AcceptTeamApplicationResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "already_in_team" }
+  | { ok: false; reason: "below_requirement"; requiredRating: number };
+
+export type TeamActionResult = { ok: true } | { ok: false; reason: "not_found" | "not_allowed" | "owner_must_delist" };
 
 /** A user's "who they are" on a friend card — derived from their main (or
  * first) character, since this app has no usernames. Null fields mean the

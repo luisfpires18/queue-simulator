@@ -14,3 +14,6 @@ next-env.d.ts
 /cache
 /debug
 /fixtures/tmp
+
+# User-uploaded profile banners (UPLOAD_DIR, see src/server/uploads.ts)
+/data

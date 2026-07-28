@@ -253,8 +253,30 @@ async function seedLfgListing(users: Map<string, string>) {
   }
 }
 
+/** Starter decline reasons. Unlike everything else in this file these aren't
+ * fake test data - declining is blocked until at least one reason exists, so
+ * a fresh install needs a usable set. Admins rename, reorder and archive them
+ * from the admin panel afterwards. Matched on label so re-seeding never
+ * duplicates and never overwrites an admin's edits. */
+const DECLINE_REASONS = [
+  "Rating too low for this key",
+  "Comp already covered",
+  "Spot already filled",
+  "Not enough experience with this content",
+  "Schedule doesn't match",
+  "Other",
+];
+
+async function seedDeclineReasons() {
+  for (const [i, label] of DECLINE_REASONS.entries()) {
+    const existing = await prisma.declineReason.findFirst({ where: { label } });
+    if (!existing) await prisma.declineReason.create({ data: { label, sortOrder: i } });
+  }
+}
+
 async function main() {
   const users = await seedUsers();
+  await seedDeclineReasons();
 
   // dev-fake-1 <-> dev-fake-2 and <-> dev-fake-4: established friendships,
   // ready to chat immediately. dev-fake-3 -> dev-fake-1: incoming pending

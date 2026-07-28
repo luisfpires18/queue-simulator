@@ -24,7 +24,8 @@
       "PowerShell(Stop-Process -Id 4508,8280 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
       "PowerShell(Get-Process -Id 4508,8280 -ErrorAction SilentlyContinue)",
       "PowerShell(Stop-Process -Id 13620,18196 -Force -Confirm:$false -ErrorAction SilentlyContinue)",
-      "PowerShell(Get-Process -Id 13620,18196 -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-Process -Id 13620,18196 -ErrorAction SilentlyContinue)",
+      "PowerShell(npm run lint)"
     ]
   }
 }

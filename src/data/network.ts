@@ -3,6 +3,7 @@
 // plain string ("pending" | "accepted" | "declined"), no DB enum (SQLite has
 // none, same as everywhere else in this schema). An accepted FriendRequest
 // row IS the friendship; there's no separate Friendship table.
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { notifyUser } from "@/server/notifications/dispatch";
 import { networkBroadcaster } from "@/server/network/broadcaster";
@@ -60,6 +61,51 @@ export async function getDisplayIdentity(userId: string): Promise<DisplayIdentit
     level: chosen?.level ?? null,
     faction: chosen?.faction ?? null,
   };
+}
+
+/** The same thing for many users in two queries total, rather than two per
+ * user. The friends list and both request lists load on every page render
+ * (AccountMenu), so their N+1s blocked the header HTML. */
+export async function getDisplayIdentities(userIds: string[]): Promise<Map<string, DisplayIdentityDTO>> {
+  const out = new Map<string, DisplayIdentityDTO>();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return out;
+
+  const [users, characters] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, battletag: true, showBattletag: true } }),
+    prisma.character.findMany({
+      where: { userId: { in: ids } },
+      select: {
+        userId: true,
+        name: true, realm: true, realmSlug: true, region: true, classId: true, faction: true,
+        isMain: true, bucket: true, sortOrder: true, level: true,
+      },
+    }),
+  ]);
+
+  const charsByUser = new Map<string, typeof characters>();
+  for (const c of characters) {
+    const list = charsByUser.get(c.userId) ?? [];
+    list.push(c);
+    charsByUser.set(c.userId, list);
+  }
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  for (const id of ids) {
+    const user = userById.get(id);
+    const chosen = pickDisplayCharacter(charsByUser.get(id) ?? []);
+    out.set(id, {
+      battletag: user?.showBattletag ? user.battletag : null,
+      characterName: chosen?.name ?? null,
+      characterRealm: chosen?.realm ?? null,
+      characterRealmSlug: chosen?.realmSlug ?? null,
+      region: chosen?.region ?? null,
+      classId: chosen?.classId ?? null,
+      level: chosen?.level ?? null,
+      faction: chosen?.faction ?? null,
+    });
+  }
+  return out;
 }
 
 /** Derives the viewer's relationship to another user from whatever
@@ -199,26 +245,25 @@ export async function removeFriend(userId: string, otherUserId: string): Promise
 }
 
 async function toFriendRequestDTOs(rows: { id: string; requesterUserId: string; addresseeUserId: string; status: string; createdAt: Date }[]): Promise<FriendRequestDTO[]> {
-  return Promise.all(
-    rows.map(async (r) => {
-      const [requester, addressee] = await Promise.all([getDisplayIdentity(r.requesterUserId), getDisplayIdentity(r.addresseeUserId)]);
-      return friendRequestDTO(r, requester, addressee);
-    })
-  );
+  const identities = await getDisplayIdentities(rows.flatMap((r) => [r.requesterUserId, r.addresseeUserId]));
+  return rows.map((r) => friendRequestDTO(r, identities.get(r.requesterUserId)!, identities.get(r.addresseeUserId)!));
 }
 
-export async function listIncomingRequests(userId: string): Promise<FriendRequestDTO[]> {
+/** React-cached per request - AccountMenu and /network both need these on
+ * the same render. */
+export const listIncomingRequests = cache(async (userId: string): Promise<FriendRequestDTO[]> => {
   const rows = await prisma.friendRequest.findMany({ where: { addresseeUserId: userId, status: "pending" }, orderBy: { createdAt: "desc" } });
   return toFriendRequestDTOs(rows);
-}
+});
 
-export async function listOutgoingRequests(userId: string): Promise<FriendRequestDTO[]> {
+export const listOutgoingRequests = cache(async (userId: string): Promise<FriendRequestDTO[]> => {
   const rows = await prisma.friendRequest.findMany({ where: { requesterUserId: userId, status: "pending" }, orderBy: { createdAt: "desc" } });
   return toFriendRequestDTOs(rows);
-}
+});
 
-/** The caller's friends, each with an unread-message count from that friend. */
-export async function listFriends(userId: string): Promise<FriendDTO[]> {
+/** The caller's friends, each with an unread-message count from that friend.
+ * React-cached per request, same reason as listIncomingRequests. */
+export const listFriends = cache(async (userId: string): Promise<FriendDTO[]> => {
   const rows = await prisma.friendRequest.findMany({
     where: { status: "accepted", OR: [{ requesterUserId: userId }, { addresseeUserId: userId }] },
     orderBy: { updatedAt: "desc" },
@@ -233,19 +278,17 @@ export async function listFriends(userId: string): Promise<FriendDTO[]> {
   });
   const unreadBySender = new Map(unread.map((u) => [u.senderId, u._count._all]));
 
-  return Promise.all(
-    rows.map(async (r) => {
-      const otherId = r.requesterUserId === userId ? r.addresseeUserId : r.requesterUserId;
-      const identity = await getDisplayIdentity(otherId);
-      return friendDTO(
-        { friendRequestId: r.id, userId: otherId, since: r.updatedAt },
-        identity,
-        unreadBySender.get(otherId) ?? 0,
-        networkBroadcaster.isOnline(otherId)
-      );
-    })
-  );
-}
+  const identities = await getDisplayIdentities(otherIds);
+  return rows.map((r) => {
+    const otherId = r.requesterUserId === userId ? r.addresseeUserId : r.requesterUserId;
+    return friendDTO(
+      { friendRequestId: r.id, userId: otherId, since: r.updatedAt },
+      identities.get(otherId)!,
+      unreadBySender.get(otherId) ?? 0,
+      networkBroadcaster.isOnline(otherId)
+    );
+  });
+});
 
 /** Just the other-side user ids of the caller's friends — for fanning out
  * presence transitions (see /api/stream/network) without the identity/unread

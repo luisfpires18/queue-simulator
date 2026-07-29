@@ -108,7 +108,15 @@ export function binDamageEvents(eventPages, fight, binMs = 5000) {
   return { binMs, points, totalDamage };
 }
 
-/** Deaths table -> death timestamps (report-relative ms) + killing blows. */
+/**
+ * Deaths table -> death timestamps (report-relative ms) plus the context
+ * analysis/deaths.js needs to judge what a death actually cost.
+ *
+ * `killingBlow` is the ability that landed the final hit; `topAbility` is the
+ * biggest contributor across the whole death window - they're usually
+ * different (you get worn down by one thing and finished by another), and the
+ * killing blow is the one worth naming to a player.
+ */
 export function parseDeathsTable(table) {
   const d = dataOf(table, 'deaths');
   const entries = Array.isArray(d?.entries) ? d.entries : [];
@@ -119,6 +127,11 @@ export function parseDeathsTable(table) {
         timestamp: numOrNull(e.timestamp),
         // biggest contributing damage ability, when present
         topAbility: e.damage?.abilities?.[0]?.name ?? null,
+        killingBlow: e.killingBlow?.name ?? null,
+        // WCL's own span for the damage that killed you - a 0 here means one
+        // shot out of nowhere rather than a slow bleed-out.
+        deathWindowMs: numOrNull(e.deathWindow),
+        overkill: numOrNull(e.overkill),
       })),
   };
 }
@@ -142,14 +155,25 @@ export function parseFightDeaths(table) {
     }));
 }
 
-/** Cast events stream -> ordered cast timestamps (type "cast" only). */
+/**
+ * Cast events stream -> ordered cast timestamps (type "cast" only).
+ *
+ * `targetID` is kept so a cast can be attributed to who it landed on - the
+ * only way to say WHO you battle-ressed (see analysis/deaths.js). It's null
+ * for self-casts and most rotation abilities, which is fine: nothing reads it
+ * except the abilities that target an ally.
+ */
 export function parseCastEvents(eventPages) {
   const casts = [];
   for (const page of eventPages) {
     const data = Array.isArray(page?.data) ? page.data : [];
     for (const ev of data) {
       if (ev?.type === 'cast' && typeof ev.timestamp === 'number') {
-        casts.push({ timestamp: ev.timestamp, abilityGameID: ev.abilityGameID ?? null });
+        casts.push({
+          timestamp: ev.timestamp,
+          abilityGameID: ev.abilityGameID ?? null,
+          targetID: numOrNull(ev.targetID),
+        });
       }
     }
   }

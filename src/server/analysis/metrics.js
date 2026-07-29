@@ -32,6 +32,11 @@ export function computeRunMetrics(detail) {
   // windows isolate rotation/buff management from downtime/deaths/routing —
   // engagedMs <= activeMs always, so a rate per engaged minute is always >=
   // the same rate per (full-duration) active minute.
+  //
+  // Because dead time is removed from the denominator here, a death does NOT
+  // drag engagedCPM down — it's protected. The cost of a death is measured
+  // separately in analysis/deaths.js, and compare.js marks the idle windows a
+  // death caused so the downtime gap doesn't bill the same seconds twice.
   const engaged = engagedWindows(fight, downtime.allWindows);
   const engagedMs = engaged.reduce((acc, w) => acc + (w.end - w.start), 0);
   const engagedMinutes = engagedMs / 60000;
@@ -62,9 +67,15 @@ export function computeRunMetrics(detail) {
     damageShare.set(a.name, a.total / totalDamage);
   }
 
+  // Fight-relative, plus the context analysis/deaths.js needs to work out what
+  // each death cost. topAbility is the biggest damage contributor over the
+  // death window; killingBlow is what actually landed the final hit.
   const deaths = (detail.deaths?.deaths ?? []).map((d) => ({
     atMs: d.timestamp != null && fight.startTime != null ? d.timestamp - fight.startTime : null,
     topAbility: d.topAbility,
+    killingBlow: d.killingBlow ?? null,
+    deathWindowMs: d.deathWindowMs ?? null,
+    overkill: d.overkill ?? null,
   }));
 
   const totalCasts = detail.casts?.totalCasts ?? 0;

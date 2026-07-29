@@ -583,6 +583,10 @@ export async function fetchRunDetail({ code, fightID, playerName, server = null,
       kill: fight.kill ?? (fight.keystoneTime > 0),
     },
     player: { id: actor.id, name: actor.name, class: actor.subType, server: actor.server },
+    // Everyone in the fight, so a cast's targetID can be named (who you
+    // battle-ressed) and a party death can be attributed. `subType` is WCL's
+    // spec name for the actor.
+    party: actors.map((a) => ({ id: a.id, name: a.name, spec: a.subType ?? null })),
     casts: parseCastsTable(rdTable(castsT)),
     buffs: buffsT ? parseBuffsTable(rdTable(buffsT)) : { totalTimeMs: null, auras: [] },
     damage: parseDamageTable(rdTable(damageT)),

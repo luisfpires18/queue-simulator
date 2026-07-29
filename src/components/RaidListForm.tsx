@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { type Role } from "@/game/classes";
 import { roleBudgetFromSlots } from "@/game/slotGroups";
+import { isStartInPast } from "@/game/scheduling";
 import { RAIDS, RAID_BY_ID, RAID_DIFFICULTIES, RAID_DIFFICULTY_LABEL, raidSizeRange, type RaidDifficulty } from "@/game/raidSeason";
 import { SpecIcon } from "./SpecIcon";
 import { WowIcon } from "./WowIcon";
@@ -12,7 +13,7 @@ import { RoleIcon } from "./RoleIcon";
 import { ErrorModal } from "./ErrorModal";
 import {
   ROLE_LABEL, ComboEditor, CoveragePanel, RoleSlotPrefPickers, Field, UtilityCoveragePanel,
-  resolveListingOwner, submitListingRequest, toLocalTimeValue, todayTimeRange, todayAtTimeISO,
+  resolveListingOwner, submitListingRequest, toLocalTimeValue, useTodayTimeRange, todayAtTimeISO,
   useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,9 @@ export function RaidListForm({
     buffCoverage, utilityCoverage, defensiveCoverage, externalDefensiveCoverage, dispelCoverage, enemyDispelCoverage,
   } = useListingCoverage(ownerSpecId, slots, combos);
 
+  // Ticks forward while the form is open - see useTodayTimeRange.
+  const timeRange = useTodayTimeRange();
+
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -123,6 +127,11 @@ export function RaidListForm({
       const badCombo = combos.find((c) => c.members.length < 2);
       if (badCombo) { setErr("A combo needs at least 2 members (or remove it)."); return; }
     }
+    // The picker's `min` doesn't stop a typed-in time, and the form may have
+    // sat open past the one it holds.
+    const startsAt = startMode === "pick" && startAt ? todayAtTimeISO(startAt) : null;
+    if (isStartInPast(startsAt)) { setErr("That start time has already passed - pick a later one."); return; }
+
     setSubmitting(true);
     const error = await submitListingRequest(editGroup, {
       kind: "raid",
@@ -130,7 +139,7 @@ export function RaidListForm({
       description: description.trim() || null,
       raidId, raidDifficulty: difficulty, raidSize: size, ownerRole,
       ownerCharacterId: owner.id, ownerSpecId,
-      startsAt: startMode === "pick" && startAt ? todayAtTimeISO(startAt) : null,
+      startsAt,
       slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
       combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
     });
@@ -215,7 +224,7 @@ export function RaidListForm({
                   type="time"
                   value={startAt}
                   onChange={(e) => setStartAt(e.target.value)}
-                  {...todayTimeRange()}
+                  {...timeRange}
                   className="bg-panel2 border border-panelborder rounded-md px-2 py-1.5 text-sm"
                 />
               </div>

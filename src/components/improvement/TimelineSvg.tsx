@@ -6,7 +6,7 @@ interface Run {
   label: string;
   durationMs: number;
   idleWindows: { startMs: number; durMs: number }[];
-  deaths: { atMs: number }[];
+  deaths: { atMs: number; killingBlow?: string | null }[];
   buffLanes: { name: string; bands: { startMs: number; endMs: number }[] }[];
   lanes: { name: string; casts: number[] }[];
 }
@@ -51,7 +51,10 @@ function TimelineRunSvg({ run, buffLaneNames }: { run: Run; buffLaneNames: strin
       <Label i={1} text="Deaths" color="#ff5d5d" />
       {run.deaths.map((d, i) => (
         <circle key={i} cx={x(d.atMs)} cy={rowY(1) + ROW_H / 2} r={5} fill="#ff5d5d" stroke="#101215" strokeWidth={2}>
-          <title>Death at {fmtTime(d.atMs)}</title>
+          <title>
+            Death at {fmtTime(d.atMs)}
+            {d.killingBlow ? ` - ${d.killingBlow}` : ""}
+          </title>
         </circle>
       ))}
 

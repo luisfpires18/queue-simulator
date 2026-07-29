@@ -18,6 +18,30 @@ import { buildGearCheck } from './gear.js';
 import { rotationComposition, castOrder } from './spikes.js';
 import { assessConfidence, gapConfidence } from './confidence.js';
 import { buildSummary } from './reportSummary.js';
+import { analyzeDeaths, deathSeverity } from './deaths.js';
+import { selectBuffWindows } from './buffWindows.js';
+
+/** abilityGameID -> name, from the cast table's guid column. Mirrors the same
+ * map timeline.js builds; castEvents only carry the numeric id. */
+function abilityNameMap(detail) {
+  const map = new Map();
+  for (const a of detail?.casts?.abilities ?? []) map.set(a.guid, a.name);
+  return map;
+}
+
+/** How close an idle window has to start to a death to BE that death. */
+const DEATH_IDLE_TOLERANCE_MS = 1000;
+
+/** Flags the idle windows a death caused, so the downtime gap can say so
+ * instead of reading as a separate failure to press buttons. */
+export function markDeathCaused(windows, deaths) {
+  return (windows ?? []).map((w) => ({
+    ...w,
+    fromDeath: (deaths ?? []).some(
+      (d) => typeof d.atMs === 'number' && Math.abs(w.startRelMs - d.atMs) <= DEATH_IDLE_TOLERANCE_MS
+    ),
+  }));
+}
 
 // Ability cast-count diffs below this share of damage are noise — skip.
 const MIN_DAMAGE_SHARE = 0.01;
@@ -48,7 +72,7 @@ export function buildReport(bundle) {
   const theirDps = bundle.other.meta.dps ?? null;
   const dpsGapPct = myDps != null && theirDps ? (100 * (theirDps - myDps)) / theirDps : null;
 
-  const gaps = gapsFrom(mine, them, buffSources, mineDetail.fight?.kill !== false);
+  const gaps = gapsFrom(mine, them, buffSources, mineDetail.fight?.kill !== false, mineDetail);
   const runConfidence = assessConfidence({
     myDurationMs: fightDurationMs(mineDetail),
     theirDurationMs: fightDurationMs(otherDetail),
@@ -132,7 +156,7 @@ export function buildGaps(mineDetail, otherDetail, buffSources = {}, { truncated
   const isKill = mineDetail.fight?.kill !== false;
   const mine = computeRunMetrics(mineDetail);
   const them = computeRunMetrics(otherDetail);
-  const gaps = gapsFrom(mine, them, buffSources, isKill);
+  const gaps = gapsFrom(mine, them, buffSources, isKill, mineDetail);
   const confidence = assessConfidence({
     myDurationMs: fightDurationMs(mineDetail),
     theirDurationMs: fightDurationMs(otherDetail),
@@ -176,20 +200,46 @@ function sampleInfoFor(g) {
   return g.category === 'ability' ? { sampleCount: (g.myCasts ?? 0) + (g.theirCasts ?? 0) } : {};
 }
 
-function gapsFrom(mine, them, buffSources, isKill = true) {
+function gapsFrom(mine, them, buffSources, isKill = true, mineDetail = null) {
   const gaps = [];
 
   // Deaths are only a gap on a KILL. On a wipe everyone dies (that's what a wipe
   // is), so comparing death counts is meaningless and would flag every wipe.
   if (isKill && mine.deaths.length > them.deaths.length) {
     const extra = mine.deaths.length - them.deaths.length;
-    gaps.push(gap('deaths', 'Deaths', mine.deaths.length, them.deaths.length, 'deaths', extra * 4));
+    // What the deaths COST, rather than a flat 4 points each: measured
+    // downtime plus any cooldown window that died with you, discounted when
+    // the death bought something (a battle-res) or came as the pull ended.
+    const records = mineDetail
+      ? analyzeDeaths({
+          deaths: mine.deaths,
+          castEvents: mineDetail.castEvents ?? [],
+          nameOf: abilityNameMap(mineDetail),
+          fight: mineDetail.fight ?? {},
+          buffWindows: selectBuffWindows(mineDetail, buffSources),
+          // Distinguishes a cooldown you wasted from a world buff you happened
+          // to be carrying - see isCooldownBuff.
+          castsByName: mine.abilities,
+          party: mineDetail.party ?? [],
+          partyDeaths: mineDetail.partyDeaths ?? [],
+        })
+      : [];
+    gaps.push(
+      gap('deaths', 'Deaths', mine.deaths.length, them.deaths.length, 'deaths', deathSeverity(records, extra), {
+        deathDetail: records,
+      })
+    );
   }
 
   if (mine.downtime.idlePct != null && them.downtime.idlePct != null && mine.downtime.idlePct > them.downtime.idlePct + 1) {
+    // An idle window that starts at a death IS the death - the same seconds
+    // were already reported above. Marking them keeps the percentage honest
+    // (it's still real idle time) while stopping the advice from telling the
+    // player to "always be casting" during a corpse run.
+    const windows = markDeathCaused(mine.downtime.windows, mine.deaths);
     gaps.push(
       gap('downtime', 'Idle time (gaps > 5s with zero casts)', round1(mine.downtime.idlePct), round1(them.downtime.idlePct), '% of fight',
-        mine.downtime.idlePct - them.downtime.idlePct, { windows: mine.downtime.windows })
+        mine.downtime.idlePct - them.downtime.idlePct, { windows, deathCausedCount: windows.filter((w) => w.fromDeath).length })
     );
   }
 

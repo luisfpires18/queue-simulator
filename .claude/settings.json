@@ -11,7 +11,10 @@
       "PowerShell(npm run build 2>&1)",
       "PowerShell(npm run dev)",
       "Bash(mkdir -p \"C:\\\\Users\\\\Victus\\\\.claude\\\\plans\" 2>&1; echo ok)",
-      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'queue_simulator' } | Select-Object ProcessId, CommandLine)"
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'queue_simulator' } | Select-Object ProcessId, CommandLine)",
+      "PowerShell(npx vitest run test/analysis.test.js test/tables.test.js test/deaths.test.js 2>&1)",
+      "PowerShell(npx vitest run test/analysis.test.js 2>&1)",
+      "PowerShell(npx vitest run test/analysis.test.js test/deaths.test.js 2>&1)"
     ],
     "additionalDirectories": [
       "d:\\Workspace\\queue_simulator\\src\\app\\player\\[region]\\[realmSlug]",

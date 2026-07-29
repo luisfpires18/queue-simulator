@@ -10,7 +10,7 @@
 // Every section of the report compares against one player, so we fetch one player.
 // The ranked page (one cheap, cached call) gives the whole dropdown; only the
 // SELECTED opponent's run is ever pulled in full.
-import { fetchMyEncounterRuns, fetchTopRuns, fetchRunDetail } from './api.js';
+import { fetchMyEncounterRuns, fetchTopRuns, fetchRunDetail, fetchFightDeaths } from './api.js';
 import { summarizeAtLevel, summarizeBestLevel } from '../parse/encounterRankings.js';
 import { dumpDebug } from './client.js';
 
@@ -62,6 +62,20 @@ export async function buildComparison({
     includeBuffSources: true,
     includeGear: true,
   });
+
+  // Party-wide deaths for MY run only. The per-player Deaths table is scoped
+  // to one sourceID, so it can't see that the tank went down two seconds
+  // before you did - and that context is the difference between "you stood in
+  // it" and "the pull was already falling apart". Only fetched when I actually
+  // died, so a clean run pays nothing.
+  if (mineDetail.deaths?.deaths?.length) {
+    const byFight = await fetchFightDeaths({
+      code: summary.bestRun.report.code,
+      fightIDs: [summary.bestRun.report.fightID],
+      refresh,
+    }).catch(() => null);
+    mineDetail.partyDeaths = byFight?.get(summary.bestRun.report.fightID) ?? [];
+  }
 
   // One cheap, cached call. Everything in the dropdown comes from here; no run
   // detail is fetched for anyone except the one finally selected.

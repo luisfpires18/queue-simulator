@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CurrentSelectionDTO, GroupDTO } from "@/data/dto";
 import { ALL_SPECS, specById, isRangedDps, CLASS_BY_ID, type Role } from "@/game/classes";
 import {
@@ -46,13 +46,34 @@ export function toLocalTimeValue(iso: string): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** [min, max] HH:MM bounds for a <input type="time"> restricted to later
- * today - min is now (so an already-past time can't be picked), max is the
- * last minute of the day. */
-export function todayTimeRange(): { min: string; max: string } {
-  const now = new Date();
+function hhmm(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return { min: `${pad(now.getHours())}:${pad(now.getMinutes())}`, max: "23:59" };
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * [min, max] HH:MM bounds for a <input type="time"> restricted to later
+ * today - min is now, max is the last minute of the day.
+ *
+ * Set from an effect rather than during render for two reasons: the server
+ * render has a different clock (and possibly timezone) to the browser, which
+ * would be a hydration mismatch on the attribute; and a form left open would
+ * otherwise keep a `min` from whenever it mounted, so it ticks forward. The
+ * empty initial min is simply no constraint, which browsers ignore.
+ *
+ * Note this is a picker affordance only - `min` does not block a typed-in
+ * value outside a native form submit, so the forms re-check with
+ * isStartInPast on submit and the server checks again.
+ */
+export function useTodayTimeRange(): { min: string; max: string } {
+  const [min, setMin] = useState("");
+  useEffect(() => {
+    const tick = () => setMin(hhmm(new Date()));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return { min, max: "23:59" };
 }
 
 /** Combines a HH:MM time-of-day with today's date into a full ISO string -

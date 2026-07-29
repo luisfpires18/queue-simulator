@@ -47,7 +47,9 @@ function runView(detail, laneNames, buffLaneNames = [], buffWindows = []) {
     })),
     deaths: (detail.deaths?.deaths ?? [])
       .filter((d) => typeof d.timestamp === 'number')
-      .map((d) => ({ atMs: d.timestamp - start })),
+      // killingBlow rides along so the marker's tooltip can name what killed
+      // you rather than just when - see TimelineSvg.
+      .map((d) => ({ atMs: d.timestamp - start, killingBlow: d.killingBlow ?? d.topAbility ?? null })),
     // Buff WINDOWS, drawn as bars — the only view that can see a buff which is
     // never cast (a proc). Empty bands when this run never had the buff, which is
     // itself the finding: they held it, you didn't.

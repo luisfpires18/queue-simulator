@@ -1,4 +1,48 @@
 import { describe, it, expect } from "vitest";
+import { isStartInPast, isStartTooFarOut, START_PAST_GRACE_MS, START_FUTURE_LIMIT_MS } from "./scheduling";
+
+describe("isStartInPast", () => {
+  const now = new Date("2026-01-01T14:17:00Z").getTime();
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  it("accepts now and anything later", () => {
+    expect(isStartInPast(at(0), now)).toBe(false);
+    expect(isStartInPast(at(60_000), now)).toBe(false);
+    expect(isStartInPast(at(6 * 60 * 60 * 1000), now)).toBe(false);
+  });
+
+  it("rejects a time that has clearly passed", () => {
+    expect(isStartInPast(at(-10 * 60 * 1000), now)).toBe(true);
+  });
+
+  it("tolerates only the grace window, for clock skew and submit latency", () => {
+    expect(isStartInPast(at(-START_PAST_GRACE_MS + 1000), now)).toBe(false);
+    expect(isStartInPast(at(-START_PAST_GRACE_MS - 1000), now)).toBe(true);
+  });
+
+  it("never rejects \"forming now\", which has no time to be past", () => {
+    expect(isStartInPast(null, now)).toBe(false);
+    expect(isStartInPast(undefined, now)).toBe(false);
+  });
+});
+
+describe("isStartTooFarOut", () => {
+  const now = new Date("2026-01-01T14:17:00Z").getTime();
+  const at = (ms: number) => new Date(now + ms).toISOString();
+
+  it("allows anything within the window, covering every timezone's today", () => {
+    expect(isStartTooFarOut(at(START_FUTURE_LIMIT_MS - 1000), now)).toBe(false);
+  });
+
+  it("rejects beyond it", () => {
+    expect(isStartTooFarOut(at(START_FUTURE_LIMIT_MS + 1000), now)).toBe(true);
+  });
+
+  it("ignores \"forming now\"", () => {
+    expect(isStartTooFarOut(null, now)).toBe(false);
+  });
+});
+
 import { startsConflict } from "./scheduling";
 
 const NOW = new Date("2026-07-19T18:00:00.000Z");

@@ -46,6 +46,22 @@ test('parseDeathsTable: real Pit deaths (2 deaths that run)', () => {
   assert.ok(parsed.deaths.every((d) => typeof d.timestamp === 'number'));
 });
 
+test('parseDeathsTable keeps the context analysis/deaths.js needs', () => {
+  const [first, second] = parseDeathsTable(loadFixture('table-deaths-pit.json')).deaths;
+
+  // The killing blow is a DIFFERENT ability from the biggest damage
+  // contributor here - worn down by one thing, finished by another. Naming
+  // the killing blow is the useful half, and it used to be discarded.
+  assert.equal(first.killingBlow, 'Dread Pulse');
+  assert.equal(first.topAbility, 'Torrent of Misery');
+  assert.equal(first.deathWindowMs, 5531);
+  assert.equal(first.overkill, 7053);
+
+  // deathWindow 0 = killed outright rather than bled down.
+  assert.equal(second.killingBlow, 'Dark Rupture');
+  assert.equal(second.deathWindowMs, 0);
+});
+
 test('parseCastEvents filters and orders cast events', () => {
   const casts = parseCastEvents([
     { data: [{ type: 'cast', timestamp: 5 }, { type: 'begincast', timestamp: 1 }, { type: 'cast', timestamp: 2 }] },

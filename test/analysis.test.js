@@ -51,6 +51,105 @@ test('buildReport produces ranked gaps with advice', () => {
   for (const g of report.gaps) assert.ok(g.advice.length > 20, `advice for ${g.title}`);
 });
 
+// The comparison fixture is a clean run (0 deaths), so the deaths gap and its
+// advice went completely untested - which is how the prose came to claim a
+// flat "20-30s of downtime" that nothing measured. Inject a death into a copy
+// of the real bundle and check the report describes THAT death.
+function bundleWithDeath({ atRelMs, raiseAllyAtRelMs = null, raiseAllyTargetID = null, partyDeaths = null, worldBuff = false }) {
+  const b = structuredClone(bundle);
+  const start = b.mine.detail.fight.startTime;
+  b.mine.detail.fight.kill = true;
+  b.mine.detail.deaths = {
+    deaths: [{ timestamp: start + atRelMs, killingBlow: 'Dread Pulse', topAbility: 'Torrent of Misery' }],
+  };
+  b.other.detail.deaths = { deaths: [] };
+  b.mine.detail.party = [{ id: 2, name: 'Ironclad', spec: 'Blood' }];
+  if (raiseAllyAtRelMs != null) {
+    const guid = 61999;
+    b.mine.detail.casts.abilities.push({ name: 'Raise Ally', guid, casts: 1 });
+    b.mine.detail.castEvents.push({
+      timestamp: start + raiseAllyAtRelMs,
+      abilityGameID: guid,
+      targetID: raiseAllyTargetID,
+    });
+    b.mine.detail.castEvents.sort((x, y) => x.timestamp - y.timestamp);
+  }
+  if (partyDeaths) {
+    b.mine.detail.partyDeaths = partyDeaths.map((p) => ({ ...p, timestamp: start + p.atRelMs }));
+  }
+  if (worldBuff) {
+    // A long self-applied aura that was never cast - exactly the shape of the
+    // "Sign of the Skirmisher"/"Find Lumber" rows that polluted the report.
+    b.mine.detail.buffs.auras.push({
+      name: 'Sign of the Skirmisher',
+      uptimeMs: 80_000,
+      uses: 1,
+      bands: [{ startTime: start, endTime: start + atRelMs + 79_000 }],
+    });
+    b.mine.detail.buffSources['Sign of the Skirmisher'] = { self: 1, foreign: 0 };
+  }
+  return b;
+}
+
+const deathGapOf = (b) => buildReport(b).gaps.find((g) => g.category === 'deaths');
+
+test('deaths gap reports the measured cost, not a hardcoded 20-30s', () => {
+  const g = deathGapOf(bundleWithDeath({ atRelMs: 60_000 }));
+  assert.ok(g, 'a deaths gap exists');
+  assert.ok(!/20-30s/.test(g.advice), 'the invented range is gone');
+  assert.ok(/before you cast again/.test(g.advice), `says what it cost: ${g.advice}`);
+  assert.ok(/Dread Pulse/.test(g.advice), 'names the killing blow');
+  assert.equal(g.deathDetail.length, 1);
+  assert.ok(g.deathDetail[0].downtimeMs >= 0);
+});
+
+test('deaths advice no longer claims CPM is dragged down (engagedCPM excludes dead time)', () => {
+  const g = deathGapOf(bundleWithDeath({ atRelMs: 60_000 }));
+  assert.ok(!/CPM/.test(g.advice), `should not mention CPM: ${g.advice}`);
+});
+
+test('a death right after a battle-res is reported as a trade and ranks lower', () => {
+  const careless = deathGapOf(bundleWithDeath({ atRelMs: 60_000 }));
+  const traded = deathGapOf(bundleWithDeath({ atRelMs: 60_000, raiseAllyAtRelMs: 57_000 }));
+
+  assert.ok(/Raise Ally/.test(traded.advice), `explains the trade: ${traded.advice}`);
+  assert.ok(traded.severity < careless.severity, 'a traded life outranks nothing');
+  assert.equal(traded.deathDetail[0].afterBattleRes, true);
+});
+
+test('the battle-res names who it landed on', () => {
+  const g = deathGapOf(
+    bundleWithDeath({ atRelMs: 60_000, raiseAllyAtRelMs: 57_000, raiseAllyTargetID: 2 })
+  );
+  assert.ok(/Ironclad/.test(g.advice), `names the target: ${g.advice}`);
+  assert.ok(/Blood/.test(g.advice), 'includes their spec, so tank/healer is obvious');
+});
+
+// The reported bug: "you took 79s of Find Lumber and 79s of Sign of the
+// Skirmisher … to the grave". Those are world buffs, not wasted cooldowns.
+test('world buffs are never reported as wasted cooldowns', () => {
+  const g = deathGapOf(bundleWithDeath({ atRelMs: 60_000, worldBuff: true }));
+  assert.ok(!/Sign of the Skirmisher/.test(g.advice), `world buff must not appear: ${g.advice}`);
+  assert.equal(
+    g.deathDetail[0].wasted.some((w) => w.name === 'Sign of the Skirmisher'),
+    false
+  );
+});
+
+test('a death alongside the party says so, and ranks lower than dying alone', () => {
+  const alone = deathGapOf(bundleWithDeath({ atRelMs: 60_000 }));
+  const together = deathGapOf(
+    bundleWithDeath({
+      atRelMs: 60_000,
+      partyDeaths: [{ atRelMs: 57_000, name: 'Ironclad', id: 2 }],
+    })
+  );
+
+  assert.ok(/Ironclad/.test(together.advice), `mentions the nearby death: ${together.advice}`);
+  assert.ok(together.severity < alone.severity, 'a group wipe is not your positioning');
+  assert.equal(together.deathDetail[0].nearbyDeaths.length, 1);
+});
+
 test('every gap carries a valid confidence level and a reason', () => {
   const report = buildReport(bundle);
   for (const g of report.gaps) {

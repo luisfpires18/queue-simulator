@@ -25,13 +25,35 @@ const combosSchema = (maxMembers: number) =>
     .max(10)
     .default([]);
 
+// A picked start time only makes sense within roughly "today" for whoever's
+// submitting it - the client's picker is a plain <input type="time"> that
+// always combines with today's date (see todayTimeRange/todayAtTimeISO in
+// GroupFormShared.tsx). This is the server-side backstop for a direct API
+// call bypassing that, generous enough to cover any timezone's "today" (up
+// to +48h) plus a little grace on the low end for clock skew / time spent
+// filling out the rest of the form.
+const START_PAST_GRACE_MS = 15 * 60 * 1000;
+const START_FUTURE_LIMIT_MS = 48 * 60 * 60 * 1000;
+
 const baseFields = {
   title: z.string().min(1).max(60),
   description: z.string().max(500).nullish(),
   ownerRole: z.enum(["TANK", "HEALER", "DPS"]),
   ownerCharacterId: z.string(),
   ownerSpecId: z.string(),
-  startsAt: z.string().datetime().nullish(),
+  startsAt: z
+    .string()
+    .datetime()
+    .nullish()
+    .refine(
+      (val) => {
+        if (!val) return true;
+        const t = new Date(val).getTime();
+        const now = Date.now();
+        return t >= now - START_PAST_GRACE_MS && t <= now + START_FUTURE_LIMIT_MS;
+      },
+      { message: "Start time must be today." }
+    ),
   slots: slotsSchema,
 
   // ---- applicant requirement (optional, advisory only) ----

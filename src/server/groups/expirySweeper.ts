@@ -10,6 +10,7 @@
 // scale-out too (unlike the board tick/matcher) - the underlying UPDATE is
 // naturally idempotent, concurrent runs just no-op on already-delisted rows.
 import { expireStaleGroups } from "@/data/groups";
+import { isFeatureEnabled } from "@/data/featureFlags";
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -25,6 +26,10 @@ class ExpirySweeper {
 
   private async sweep() {
     try {
+      // Checked every tick (not just at start()) so an admin flipping the
+      // "expirySweeper" flag off/on (see Admin -> Feature Flags) takes
+      // effect within the hour without needing a restart.
+      if (!(await isFeatureEnabled("expirySweeper"))) return;
       const count = await expireStaleGroups();
       if (count > 0) console.log(`expirySweeper: delisted ${count} expired group(s)`);
     } catch (err) {

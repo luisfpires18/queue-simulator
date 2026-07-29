@@ -59,10 +59,10 @@ export function CharacterSettings({
       });
       if (!zoneRes.ok) throw new Error((await zoneRes.json()).error);
 
-      const specsBody = [...checked].map((specId) => ({
-        specId,
-        points: specTracks.find((s) => s.specId === specId)?.points ?? null,
-      }));
+      // Score isn't sent - this route only curates which specs are tracked;
+      // their cached points are set server-side from a real WCL fetch (see
+      // setSpecTracks's own comment).
+      const specsBody = [...checked].map((specId) => ({ specId }));
       if (specsBody.length) {
         const specsRes = await fetch(`/api/wcl/characters/${characterId}/specs`, {
           method: "PUT",

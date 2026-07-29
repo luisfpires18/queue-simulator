@@ -12,7 +12,7 @@ import { RoleIcon } from "./RoleIcon";
 import { ErrorModal } from "./ErrorModal";
 import {
   ROLE_LABEL, ComboEditor, CoveragePanel, RoleSlotPrefPickers, Field, UtilityCoveragePanel,
-  resolveListingOwner, submitListingRequest, toLocalInputValue,
+  resolveListingOwner, submitListingRequest, toLocalTimeValue, todayTimeRange, todayAtTimeISO,
   useComboBuilder, useListingCoverage, type FormSlot,
 } from "./GroupFormShared";
 import { cn } from "@/lib/utils";
@@ -82,7 +82,7 @@ export function RaidListForm({
 
   const [description, setDescription] = useState(editGroup?.description ?? "");
   const [startMode, setStartMode] = useState<"now" | "pick">(editGroup?.startsAt ? "pick" : "now");
-  const [startAt, setStartAt] = useState(editGroup?.startsAt ? toLocalInputValue(editGroup.startsAt) : "");
+  const [startAt, setStartAt] = useState(editGroup?.startsAt ? toLocalTimeValue(editGroup.startsAt) : "");
 
   // Fixed to this raid's original owner/spec (slot 0) when editing, not the
   // navbar's currently-selected character - see resolveListingOwner.
@@ -130,7 +130,7 @@ export function RaidListForm({
       description: description.trim() || null,
       raidId, raidDifficulty: difficulty, raidSize: size, ownerRole,
       ownerCharacterId: owner.id, ownerSpecId,
-      startsAt: startMode === "pick" && startAt ? new Date(startAt).toISOString() : null,
+      startsAt: startMode === "pick" && startAt ? todayAtTimeISO(startAt) : null,
       slots: slots.map((s) => ({ role: s.role, prefs: s.prefs })),
       combos: combos.map((c) => c.members.map((m) => ({ role: m.role, specId: m.specId }))),
     });
@@ -209,12 +209,16 @@ export function RaidListForm({
               Pick a time
             </button>
             {startMode === "pick" && (
-              <input
-                type="datetime-local"
-                value={startAt}
-                onChange={(e) => setStartAt(e.target.value)}
-                className="bg-panel2 border border-panelborder rounded-md px-2 py-1.5 text-sm"
-              />
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Today at</span>
+                <input
+                  type="time"
+                  value={startAt}
+                  onChange={(e) => setStartAt(e.target.value)}
+                  {...todayTimeRange()}
+                  className="bg-panel2 border border-panelborder rounded-md px-2 py-1.5 text-sm"
+                />
+              </div>
             )}
           </div>
         </Field>

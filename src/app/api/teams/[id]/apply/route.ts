@@ -5,7 +5,8 @@ import { getSpecTracks } from "@/data/characters";
 import { countDeclinesByListing } from "@/data/declineRecords";
 import { MAX_APPLICATION_DECLINES } from "@/game/applications";
 import { minRatingFailure } from "@/server/guards";
-import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
+import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody, rateLimited } from "@/server/http";
+import { checkRateLimit } from "@/server/rateLimit";
 import { teamApplySchema } from "../../schema";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+  if (!checkRateLimit("teams-apply", ctx.user.id, 20, 60_000)) return rateLimited();
 
   const { id } = await params;
   const body = await parseBody(req, teamApplySchema);

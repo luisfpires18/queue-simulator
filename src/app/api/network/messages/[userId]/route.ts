@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listMessages, sendMessage } from "@/data/messages";
-import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
+import { getSessionUser, notAuthenticated, parseBody, rateLimited } from "@/server/http";
+import { checkRateLimit } from "@/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ userId: 
 export async function POST(req: Request, { params }: { params: Promise<{ userId: string }> }) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+  if (!checkRateLimit("dm-send", ctx.user.id, 30, 60_000)) return rateLimited();
 
   const { userId } = await params;
   const body = await parseBody(req, sendSchema);

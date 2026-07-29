@@ -31,11 +31,37 @@ export interface ComboMember { role: Role; specId: string }
 
 export interface FormSlot { role: Role; prefs: string[] }
 
-/** ISO string -> the local value a <input type="datetime-local"> expects. */
-export function toLocalInputValue(iso: string): string {
+// The "pick a time" field only ever offers today (see startInfo/CountdownLight
+// callers - a start date more than a day out just isn't a thing this board
+// supports), so the picker is a plain <input type="time"> rather than a full
+// date+time control - nothing meaningful to show or pick in the date part.
+
+/** HH:MM (local) portion of an ISO string - seeds the time picker from an
+ * existing startsAt when editing. Date is intentionally dropped: since the
+ * picker only ever offers today, editing resets the start to "today at this
+ * clock time" rather than preserving whatever day it was originally on. */
+export function toLocalTimeValue(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** [min, max] HH:MM bounds for a <input type="time"> restricted to later
+ * today - min is now (so an already-past time can't be picked), max is the
+ * last minute of the day. */
+export function todayTimeRange(): { min: string; max: string } {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { min: `${pad(now.getHours())}:${pad(now.getMinutes())}`, max: "23:59" };
+}
+
+/** Combines a HH:MM time-of-day with today's date into a full ISO string -
+ * the inverse of toLocalTimeValue, used when submitting the picked time. */
+export function todayAtTimeISO(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
 }
 
 /** "Who you're listing as": the navbar's current character/spec for a NEW

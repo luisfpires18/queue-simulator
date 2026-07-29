@@ -245,11 +245,19 @@ export async function getSpecTracksByCharacter(characterIds: string[]): Promise<
 }
 
 /** Replace the full set of tracked specs for a character (mirrors wcl's roster
- * upsert). Upserts each wanted spec (preserving its isMain/bnetScore rather
- * than wiping them) and only deletes rows for specs no longer wanted. */
+ * upsert). Upserts each wanted spec (preserving its isMain/bnetScore/points
+ * rather than wiping them) and only deletes rows for specs no longer wanted.
+ *
+ * Deliberately takes no `points` (or `bnetScore`) - both are scores, and a
+ * caller-supplied score here would let a client forge its own Warcraft Logs
+ * rating (this used to accept `points` from the request body, which fed
+ * straight into rankScoreFor's application ranking and minRatingFailure's
+ * hard gate - see the PUT /api/wcl/characters/[id]/specs route). Real
+ * points only ever come from setSpecPoints (a genuine WCL fetch); real
+ * bnetScore only from setCharacterRating (a genuine Blizzard fetch). */
 export async function setSpecTracks(
   characterId: string,
-  specs: { specId: string; role: string; points: number | null }[]
+  specs: { specId: string; role: string }[]
 ): Promise<SpecTrackDTO[]> {
   const existing = await prisma.characterSpecTrack.findMany({ where: { characterId } });
   const existingBySpec = new Map(existing.map((e) => [e.specId, e]));
@@ -259,8 +267,8 @@ export async function setSpecTracks(
     ...specs.map((s) =>
       prisma.characterSpecTrack.upsert({
         where: { characterId_specId: { characterId, specId: s.specId } },
-        create: { characterId, specId: s.specId, role: s.role, points: s.points, isMain: existingBySpec.get(s.specId)?.isMain ?? false },
-        update: { role: s.role, points: s.points },
+        create: { characterId, specId: s.specId, role: s.role, isMain: existingBySpec.get(s.specId)?.isMain ?? false },
+        update: { role: s.role },
       })
     ),
     prisma.characterSpecTrack.deleteMany({ where: { characterId, specId: { notIn: wantedIds } } }),

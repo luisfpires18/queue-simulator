@@ -40,6 +40,10 @@ export function notAuthenticated() {
   return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 }
 
+export function rateLimited() {
+  return NextResponse.json({ error: "Too many requests - try again in a moment." }, { status: 429 });
+}
+
 /** The character, if it belongs to this user; null otherwise. */
 export function findOwnedCharacter(userId: string, characterId: string) {
   return prisma.character.findFirst({ where: { id: characterId, userId } });

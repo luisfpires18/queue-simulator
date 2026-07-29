@@ -5,7 +5,8 @@ import { getGroup, findSchedulingConflict } from "@/data/groups";
 import { getSpecTracks } from "@/data/characters";
 import { MAX_APPLICATION_DECLINES } from "@/game/applications";
 import { minRatingFailure } from "@/server/guards";
-import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
+import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody, rateLimited } from "@/server/http";
+import { checkRateLimit } from "@/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ const applySchema = z.object({
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+  if (!checkRateLimit("groups-apply", ctx.user.id, 20, 60_000)) return rateLimited();
 
   const { id } = await params;
   const body = await parseBody(req, applySchema);

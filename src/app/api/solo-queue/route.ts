@@ -3,7 +3,8 @@ import { z } from "zod";
 import { joinSoloQueue, leaveSoloQueue, getMySoloQueueStatus } from "@/data/soloQueue";
 import { runMatchPass } from "@/server/soloQueue/matchRunner";
 import { isFeatureEnabled } from "@/data/featureFlags";
-import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody } from "@/server/http";
+import { getSessionUser, notAuthenticated, findOwnedCharacter, parseBody, rateLimited } from "@/server/http";
+import { checkRateLimit } from "@/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+  if (!checkRateLimit("solo-queue-join", ctx.user.id, 10, 60_000)) return rateLimited();
 
   // Hides the join button in the UI (see BoardClient's soloQueueEnabled),
   // but that's client-side only - enforce it here too so a direct POST

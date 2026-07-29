@@ -11,6 +11,7 @@
 // started from the same src/instrumentation.ts hook.
 import { getCurrentSeasonId } from "@/data/appSettings";
 import { snapshotAllCharacters } from "@/data/seasonHistory";
+import { isFeatureEnabled } from "@/data/featureFlags";
 
 const SNAPSHOT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 day
 
@@ -26,6 +27,10 @@ class SeasonSnapshotter {
 
   private async snapshot() {
     try {
+      // Checked every tick (not just at start()) so an admin flipping the
+      // "seasonSnapshotter" flag off/on (see Admin -> Feature Flags) takes
+      // effect within the day without needing a restart.
+      if (!(await isFeatureEnabled("seasonSnapshotter"))) return;
       const seasonId = await getCurrentSeasonId();
       const count = await snapshotAllCharacters(seasonId);
       console.log(`seasonSnapshotter: snapshotted ${count} character(s) for ${seasonId}`);

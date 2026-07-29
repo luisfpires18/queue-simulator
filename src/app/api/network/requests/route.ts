@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listIncomingRequests, listOutgoingRequests, sendFriendRequest } from "@/data/network";
-import { getSessionUser, notAuthenticated, parseBody } from "@/server/http";
+import { getSessionUser, notAuthenticated, parseBody, rateLimited } from "@/server/http";
+import { checkRateLimit } from "@/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const ctx = await getSessionUser();
   if (!ctx) return notAuthenticated();
+  if (!checkRateLimit("friend-request-send", ctx.user.id, 20, 60_000)) return rateLimited();
 
   const body = await parseBody(req, sendSchema);
   if (!body.ok) return body.response;

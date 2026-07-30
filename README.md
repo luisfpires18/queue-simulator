@@ -30,11 +30,17 @@ data-derived advice on what they do differently.
 - **Live player lookup** (`/player/[region]/[realm]/[name]`) - look up any character on any
   server, registered here or not.
 - **Parse improvement** (on `/profile`) - per-character Warcraft Logs zone/spec settings, a
-  per-dungeon overview board (best/median %, sorted weakest-first by default), and an eight-section
-  gap report vs a top same-spec run: DPS-over-time chart with a drag-to-inspect cast-order brush,
+  per-dungeon overview board (best/median %, sorted weakest-first by default), and a gap report vs a
+  top same-spec run: DPS-over-time chart with a drag-to-inspect cast-order brush,
   rotation timeline, consumables & party buffs, gear check, parse tier, biggest gaps, and
   per-ability table. Raid parse analysis (`src/server/wcl/raid.js`, `/api/wcl/raid/*`) is ported
   and working server-side but has no dedicated raid UI yet.
+- **Rotation review** (in the same report) - the one section that judges a run against the spec's
+  *published* rotation instead of against another player, so it can name things a player-vs-player
+  diff structurally cannot ("your disease was down for 40s", "6 of your 16 Army of the Dead casts
+  had no Dark Transformation"). Rules live as data in `src/game/rotations/*.ts`, one pack per spec,
+  each rule carrying the source URL and the date it was read; Unholy Death Knight is the only pack
+  today and every other spec simply omits the section. See "Rotation rule packs" below.
 - **Push notifications** - set a key-level range once and get pushed the moment a matching group
   opens, or the moment your application/Solo Queue match is accepted, even with the tab closed.
 
@@ -79,6 +85,44 @@ There is no native app, no React Native, no Capacitor - mobile support is entire
   full group list on a fixed interval; the client consumes it with the native `EventSource` API.
 - **Domain logic is pure and config-driven** - `src/game/*` (comp analysis, rating, roles, season
   data) has no Prisma imports and is unit-tested in isolation from the DB layer.
+
+### Rotation rule packs
+
+Almost all of the analysis engine is deliberately **comparison-only**: `src/server/analysis/advice.js`
+derives every sentence from the diff between two runs, so it carries no patch-specific rotation
+knowledge and survives patches untouched. That design has one blind spot - it can say "they pressed
+this more than you", but never "you let your disease drop".
+
+`src/game/rotations/` is the single, quarantined exception. Each pack is data (never prose, never
+code paths): declarative rules with a `why`, a `sourceIndex`, and a patch, checked by the generic
+`src/server/analysis/rotationRules.js`. Adding a spec is a new data file, not new checker code.
+
+Three things worth knowing before editing a pack:
+
+1. **Nothing fetches a guide at runtime.** `npm run rotation:sources -- <specId>` re-fetches the
+   sources offline into `docs/rotation-sources/<spec>.md` for re-authoring. Wowhead renders
+   client-side and cannot be fetched at all; SimulationCraft's APL
+   (`engine/class_modules/apl/apl_death_knight.cpp` on the `midnight` branch) is machine-readable and
+   is the source to trust when guides disagree.
+2. **Ability and aura names must be verified against a real log**, not copied from a guide or from
+   SimC's snake_case. A name that does not match measures nothing and fails silently.
+   `fixtures/comparison-10658-plus0.json` is a convenient check.
+3. **Calibrate every threshold against a top cohort before shipping it.** Thresholds in the Unholy
+   pack come from measuring the top 7 ranked parses for the same dungeon and key level, and a rule
+   only ships if the whole cohort passes it. This is not ceremony - three candidate rules were
+   dropped for measuring nothing, and a plausible-looking 12% Runic-Power cap would have flagged the
+   #1 parse in the world. The `cooldown_drift` rule kind exists for raid packs but is deliberately
+   absent from the Unholy pack: in M+ it ranked a 273k-dps run *worse* than a 195k one, because
+   holding a cooldown for the next pull is correct play. `test/rotationRules.test.js` asserts the
+   top parse in the fixture trips no high-severity rule.
+4. **There are no target-count rules, and adding them is not a small job.** Roughly a third of the
+   AoE guidance is gated on `active_enemies`, which no cheap WCL query exposes. Counting distinct
+   enemies the player damaged does work as a sensor (measured: one run's packs cap at 4 enemies,
+   another's reach 10, consistently across independent abilities), but it needs a full DamageDone
+   *event* pagination per run - ~90k-110k events, multi-MB, on a page that should stay fast. It also
+   measures route choice as much as rotation: a player whose pulls are small is *correct* to use
+   Death Coil over Epidemic, and the comparison half of the report already covers "they pulled
+   bigger". Read the numbers before assuming a spender-choice rule is a rotation rule.
 
 ## Setup
 

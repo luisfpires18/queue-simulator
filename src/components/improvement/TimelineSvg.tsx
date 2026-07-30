@@ -16,8 +16,22 @@ const PLOT_W = 700;
 const ROW_H = 20;
 const RIGHT_PAD = 8;
 
+/** A moment the rotation review flagged, drawn across every lane. */
+export interface TimelineMarker {
+  atMs: number;
+  label: string;
+}
+
 // Ported from wcl-parse-improver's public/js/chart.js timelineSvg().
-function TimelineRunSvg({ run, buffLaneNames }: { run: Run; buffLaneNames: string[] }) {
+function TimelineRunSvg({
+  run,
+  buffLaneNames,
+  markers = [],
+}: {
+  run: Run;
+  buffLaneNames: string[];
+  markers?: TimelineMarker[];
+}) {
   const nBuff = buffLaneNames.length;
   const rows = run.lanes.length + nBuff + 2;
   const topPad = 4;
@@ -97,6 +111,25 @@ function TimelineRunSvg({ run, buffLaneNames }: { run: Run; buffLaneNames: strin
         <line x1={LEFT_LABEL_W - 126} x2={LEFT_LABEL_W + PLOT_W} y1={rowY(2 + nBuff) - 1} y2={rowY(2 + nBuff) - 1} stroke="#23272e" strokeWidth={1} strokeDasharray="3 3" />
       )}
 
+      {/* Rotation-review markers, drawn last so they read on top of the lanes.
+          Deliberately thin and dashed: they point at a moment, they don't hide
+          the casts that moment is about. */}
+      {markers.map((m, i) => (
+        <line
+          key={`marker-${i}`}
+          x1={x(m.atMs)}
+          x2={x(m.atMs)}
+          y1={topPad}
+          y2={topPad + rows * ROW_H}
+          stroke="#ff8a3d"
+          strokeWidth={1}
+          strokeDasharray="2 3"
+          pointerEvents="stroke"
+        >
+          <title>{m.label} at {fmtTime(m.atMs)}</title>
+        </line>
+      ))}
+
       <line x1={LEFT_LABEL_W} x2={LEFT_LABEL_W + PLOT_W} y1={topPad + rows * ROW_H + 4} y2={topPad + rows * ROW_H + 4} stroke="#23272e" strokeWidth={1} />
       {[0, 0.25, 0.5, 0.75, 1].map((frac) => (
         <text key={frac} x={LEFT_LABEL_W + frac * PLOT_W} y={topPad + rows * ROW_H + 16} fontSize={9} fill="#8b93a1" textAnchor={frac === 0 ? "start" : frac === 1 ? "end" : "middle"}>
@@ -109,8 +142,11 @@ function TimelineRunSvg({ run, buffLaneNames }: { run: Run; buffLaneNames: strin
 
 export function TimelineSection({
   timeline,
+  markers = [],
 }: {
   timeline: { laneNames: string[]; buffLaneNames?: string[]; mine: Run; other: Run } | null;
+  /** Rotation-review moments. Only ever drawn on YOUR run - they judge your run. */
+  markers?: TimelineMarker[];
 }) {
   if (!timeline || !timeline.laneNames.length) return null;
   const buffLaneNames = timeline.buffLaneNames ?? [];
@@ -119,10 +155,11 @@ export function TimelineSection({
       <p className="text-[11px] text-gray-500">
         Ticks = individual casts. Only cooldown-gated abilities get a lane - fillers are in the per-ability table further down.
         {buffLaneNames.length > 0 && " Filled bars above the dashed line = your buff windows (procs, cooldowns, trinkets)."} The two runs have different durations, so each has its own time axis.
+        {markers.length > 0 && " Dashed orange lines mark the moments the rotation review flagged below."}
       </p>
       <div>
         <div className="text-xs text-gray-500 mb-1">You · duration {fmtTime(timeline.mine.durationMs)}</div>
-        <TimelineRunSvg run={timeline.mine} buffLaneNames={buffLaneNames} />
+        <TimelineRunSvg run={timeline.mine} buffLaneNames={buffLaneNames} markers={markers} />
       </div>
       <div>
         <div className="text-xs text-gray-500 mb-1">{timeline.other.label} · duration {fmtTime(timeline.other.durationMs)}</div>

@@ -218,6 +218,35 @@ query ReportTable($code: String!, $fightIDs: [Int!], $dataType: TableDataType!, 
 // Gear (with enchants + gems) at pull start, for every player. CombatantInfo is a
 // per-player snapshot event; we pick the one matching the actor's sourceID. This
 // is the only source of gear — the tables carry none. The gear check reads it.
+// Debuffs on the ENEMIES, for disease/dot uptime (analysis/rotationRules.js).
+//
+// Deliberately NOT the generic REPORT_TABLE with dataType: Debuffs. Verified
+// against a real Algeth'ar Academy log: on the Debuffs table `sourceID` selects
+// whose debuffs you are VIEWING, exactly like the Buffs table, so
+// `Debuffs + sourceID: <player>` returns the debuffs sitting on the player
+// (Exhaustion, Mana Bomb, boss mechanics) and contains no diseases at all.
+// `hostilityType: Enemies` is what moves the view to the enemy side; adding
+// sourceID back on top of it returns 0 auras, because there it means the enemy
+// actor. `filterExpression: "source.id = N"` also yields 0 on aura tables.
+//
+// Consequence: this is every player's enemy debuffs, not just mine, so callers
+// must match by ability NAME (Virulent Plague and Dread Plague are Death Knight
+// only, so the only way to over-count is a second Unholy DK in the group, whose
+// diseases would union with mine). Uptime is "at least one enemy had it", which
+// is the right question for a maintained disease. Bands come back as absolute
+// report timestamps, same basis as the Buffs table.
+//
+// No sourceID also means the cache key is per report+fight rather than per
+// player, so a group's second analysed player pays nothing for this.
+export const REPORT_ENEMY_DEBUFF_TABLE = `
+query ReportEnemyDebuffTable($code: String!, $fightIDs: [Int!]) {
+  reportData {
+    report(code: $code) {
+      table(fightIDs: $fightIDs, dataType: Debuffs, hostilityType: Enemies)
+    }
+  }
+}`;
+
 export const REPORT_COMBATANT_INFO = `
 query ReportCombatantInfo($code: String!, $fightIDs: [Int!]) {
   reportData {

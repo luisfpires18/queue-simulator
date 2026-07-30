@@ -12,6 +12,7 @@ import {
   REPORT_BOSS_FIGHTS,
   RAID_CHARACTER_RANKINGS,
   REPORT_TABLE,
+  REPORT_ENEMY_DEBUFF_TABLE,
   REPORT_FIGHT_DEATHS,
   REPORT_ENEMY_ACTORS,
   REPORT_DAMAGE_TAKEN_GRAPH,
@@ -526,22 +527,29 @@ export async function fetchRunDetail({ code, fightID, playerName, server = null,
 
   const tableVars = { code, fightIDs: [fightID], sourceID: actor.id };
   // `lite` skips the two heavy per-event paginations (casts + resources) and
-  // the Buffs table — everything a per-pull output/consistency read doesn't
-  // need. It cuts a full run's ~7 requests (with multi-page event streams) down
-  // to 3 table calls, so every pull of a raid night can be analysed, not just a
-  // sample. The full fetch is reserved for the one pull compared to a top parser.
+  // the Buffs/Debuffs tables — everything a per-pull output/consistency read
+  // doesn't need. It cuts a full run's ~8 requests (with multi-page event streams)
+  // down to 3 table calls, so every pull of a raid night can be analysed, not just
+  // a sample. The full fetch is reserved for the one pull compared to a top parser.
   //
   // `castsOnly` is the opposite trade: keep everything castOrder() reads (the Casts
   // table names the presses, DamageDone separates fillers from cooldowns, Buffs
   // recovers potions with no cast event, and the event stream gives the order) and
   // drop the rest. It's what makes fetching TEN top players' rotations affordable:
-  // ~5 requests each instead of ~7, with no death or resource data pulled that a
-  // rotation-only view would never show.
+  // ~5 requests each instead of ~8, with no death, resource or debuff data pulled
+  // that a rotation-only view would never show.
   const castsT = await gql(REPORT_TABLE, { ...tableVars, dataType: 'Casts' });
   const damageT = await gql(REPORT_TABLE, { ...tableVars, dataType: 'DamageDone' });
   // NB: `lite` still fetches Deaths — per-pull death timing is the whole point of it.
   const deathsT = castsOnly ? null : await gql(REPORT_TABLE, { ...tableVars, dataType: 'Deaths' });
   const buffsT = lite ? null : await gql(REPORT_TABLE, { ...tableVars, dataType: 'Buffs' });
+  // Debuffs on the ENEMIES — the first enemy-side fetch in the engine. A
+  // maintained disease is invisible in every other stream: it has no cast event
+  // of its own once applied, and the Buffs table only covers the player. See
+  // REPORT_ENEMY_DEBUFF_TABLE for why this can't be the generic table + sourceID
+  // (that returns the debuffs sitting ON the player, with no diseases in it) and
+  // why callers must match by ability name.
+  const debuffsT = lite || castsOnly ? null : await gql(REPORT_ENEMY_DEBUFF_TABLE, { code, fightIDs: [fightID] });
 
   const castPages = lite ? [] : await paginateEvents(REPORT_CAST_EVENTS, { code, fightID, sourceID: actor.id, fight });
   const resourcePages =
@@ -589,6 +597,7 @@ export async function fetchRunDetail({ code, fightID, playerName, server = null,
     party: actors.map((a) => ({ id: a.id, name: a.name, spec: a.subType ?? null })),
     casts: parseCastsTable(rdTable(castsT)),
     buffs: buffsT ? parseBuffsTable(rdTable(buffsT)) : { totalTimeMs: null, auras: [] },
+    debuffs: debuffsT ? parseBuffsTable(rdTable(debuffsT), 'debuffs') : { totalTimeMs: null, auras: [] },
     damage: parseDamageTable(rdTable(damageT)),
     deaths: deathsT ? parseDeathsTable(rdTable(deathsT)) : { deaths: [] },
     castEvents: parseCastEvents(castPages),

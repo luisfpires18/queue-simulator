@@ -17,3 +17,8 @@ next-env.d.ts
 
 # User-uploaded profile banners (UPLOAD_DIR, see src/server/uploads.ts)
 /data
+
+# Rotation-guide text dumped by `npm run rotation:sources` for re-authoring the
+# rule packs. Regenerable, large, and third-party content - the packs in
+# src/game/rotations keep the source URLs, which is what actually needs tracking.
+/docs/rotation-sources

@@ -101,8 +101,15 @@ export function computeRunMetrics(detail) {
   };
 }
 
-/** Fight span minus idle windows -> sorted non-overlapping absolute windows. */
-function engagedWindows(fight, idleWindows) {
+/**
+ * Fight span minus idle windows -> sorted non-overlapping absolute windows.
+ *
+ * Exported because analysis/rotationRules.js judges cooldown usage against
+ * engaged time too: in M+ the seconds spent walking between pulls are not
+ * seconds a cooldown was "wasted", and a second definition of "engaged" living
+ * in two files would drift apart on the first tweak.
+ */
+export function engagedWindows(fight, idleWindows) {
   const start = fight.startTime ?? null;
   const end = fight.endTime ?? null;
   if (start == null || end == null) return [];
@@ -121,7 +128,7 @@ function engagedWindows(fight, idleWindows) {
 }
 
 /** Total overlap between aura bands and engaged windows (both absolute ms). */
-function intersectMs(bands, engaged) {
+export function intersectMs(bands, engaged) {
   let total = 0;
   for (const band of bands) {
     for (const w of engaged) {

@@ -15,7 +15,8 @@
     "db:reset": "prisma db push --force-reset && prisma db seed",
     "setup": "prisma db push && prisma db seed",
     "postinstall": "prisma generate",
-    "collect:runs": "tsx src/server/collector/cli.ts"
+    "collect:runs": "tsx src/server/collector/cli.ts",
+    "rotation:sources": "tsx scripts/rotation-source-refresh.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

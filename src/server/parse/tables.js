@@ -22,9 +22,15 @@ export function parseCastsTable(table) {
   };
 }
 
-/** Buffs table -> per-aura uptimes. */
-export function parseBuffsTable(table) {
-  const d = dataOf(table, 'buffs');
+/**
+ * Buffs table -> per-aura uptimes.
+ *
+ * The Debuffs table comes back in the identical `{ auras: [...] }` shape, so it
+ * reuses this parser; `label` only steers the debug dump filename so a malformed
+ * debuff payload isn't mistaken for a buff one.
+ */
+export function parseBuffsTable(table, label = 'buffs') {
+  const d = dataOf(table, label);
   const auras = Array.isArray(d?.auras) ? d.auras : [];
   return {
     totalTimeMs: numOrNull(d?.totalTime),

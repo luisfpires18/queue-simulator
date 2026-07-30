@@ -20,6 +20,8 @@ import { assessConfidence, gapConfidence } from './confidence.js';
 import { buildSummary } from './reportSummary.js';
 import { analyzeDeaths, deathSeverity } from './deaths.js';
 import { selectBuffWindows } from './buffWindows.js';
+import { checkRotation } from './rotationRules.js';
+import { rotationSpecFor, specIdFromWcl } from '@/game/rotations';
 
 /** abilityGameID -> name, from the cast table's guid column. Mirrors the same
  * map timeline.js builds; castEvents only carry the numeric id. */
@@ -131,6 +133,10 @@ export function buildReport(bundle) {
     castOrder: { mine: castOrder(mineDetail), them: castOrder(otherDetail) },
     timeline,
     rotationMatch: { spellMixPct: rotation.similarityPct, castOrderPct: rotation.sequencePct },
+    // 3b — my run vs the spec's PUBLISHED rotation, not vs another player. Null
+    // for every spec without a rule pack in src/game/rotations, which is all but
+    // Unholy DK today; the UI section omits itself when this is null.
+    rotationReview: checkRotation(mineDetail, rotationSpecFor(specIdFromWcl(className, specName))),
     // 4
     consumables: buildConsumables(mineDetail, otherDetail, otherName, buffSources, statPriorityNote),
     // 4b — gear check: your enchants/gems vs theirs (null when no gear snapshot)

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { buildComparison, DEFAULT_LEVEL } from "@/server/wcl/comparison.js";
 import { buildReport } from "@/server/analysis/compare.js";
 import { requireUser, loadOwnedCharacter, wclSpecParams, wantsRefresh, errorResponse, ApiError } from "@/server/wclHelpers";
+import { getCurrentSeasonId } from "@/data/appSettings";
+import { seasonById } from "@/game/season";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,12 @@ export async function GET(req: Request) {
       compareTo,
       refresh: wantsRefresh(searchParams),
     } as any);
-    return NextResponse.json(buildReport(bundle));
+    // The rotation review's rule pack is authored for a specific patch, and the
+    // section warns when the two disagree. Which season is current is an
+    // admin-set runtime toggle, not a constant, so it has to be read here rather
+    // than imported into the client component.
+    const seasonPatch = seasonById(await getCurrentSeasonId()).patch;
+    return NextResponse.json({ ...buildReport(bundle), seasonPatch });
   } catch (err) {
     return errorResponse(err);
   }

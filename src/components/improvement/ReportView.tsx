@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { fmtK, fmtPct, pctColor, tierColor, median, EMPTY } from "@/game/wclFormat";
 import { TimelineSection } from "./TimelineSvg";
 import { DpsChart } from "./DpsChart";
+import { Section } from "./Section";
+import { RotationReviewSection, reviewMarkers } from "./RotationReviewSection";
 
 // Loose view model — mirrors the JSON shape from POST buildReport() in the
 // ported src/server/analysis/compare.js. Kept permissive (not exhaustively
@@ -105,6 +107,7 @@ export function ReportView({
       <GapsSection gaps={view.gaps} />
       <TopSpellsSection a={view.abilities} />
       <RotationSection view={view} />
+      <RotationReviewSection review={view.rotationReview} seasonPatch={view.seasonPatch} />
       <ConsumablesSection c={view.consumables} />
       <GearSection g={view.gear} />
       <ParseSection p={view.parse} />
@@ -112,17 +115,6 @@ export function ReportView({
       <AbilitiesSection a={view.abilities} />
       <CohortSection top={top} similar={similar} myDps={h.myDps} />
     </div>
-  );
-}
-
-function Section({ title, sub, children, open = false }: { title: string; sub?: string; children: React.ReactNode; open?: boolean }) {
-  return (
-    <details className="border-t border-panelborder/60 pt-3" open={open}>
-      <summary className="cursor-pointer select-none text-sm font-bold mb-2">
-        {title} {sub && <small className="text-gray-500 font-normal">{sub}</small>}
-      </summary>
-      {children}
-    </details>
   );
 }
 
@@ -375,7 +367,9 @@ function RotationSection({ view }: { view: ReportViewModel }) {
           Rotation match: <b>{m.spellMixPct}%</b> spell mix · <b>{m.castOrderPct}%</b> cast order
         </p>
       )}
-      <TimelineSection timeline={view.timeline} />
+      {/* Markers come from the rotation review below, so a flagged moment is
+          visible on the lanes it refers to rather than only named in prose. */}
+      <TimelineSection timeline={view.timeline} markers={reviewMarkers(view.rotationReview)} />
     </Section>
   );
 }
